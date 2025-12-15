@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
 import { config, validateConfig } from './config.js';
 import { pool } from './db/client.js';
 import capturesRouter from './routes/captures.js';
@@ -67,6 +68,9 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Serve uploaded audio files
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Health check
 app.get('/health', (req, res) => {

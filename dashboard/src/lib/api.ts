@@ -7,6 +7,7 @@ export interface Thought {
   canonical_text: string | null;
   capture_id: string | null;
   transcript: string | null;
+  audio_url: string | null;
 }
 
 export interface Task {

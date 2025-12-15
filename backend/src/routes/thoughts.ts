@@ -4,16 +4,17 @@ import type { Thought } from '../types/index.js';
 
 const router = Router();
 
-// Extended thought type with transcript
+// Extended thought type with transcript and audio
 interface ThoughtWithTranscript extends Thought {
   transcript: string | null;
+  audio_url: string | null;
 }
 
 // GET /api/thoughts - List all thoughts
 router.get('/', async (req, res) => {
   try {
     const thoughts = await query<ThoughtWithTranscript>(
-      `SELECT t.*, c.transcript
+      `SELECT t.*, c.transcript, c.audio_url
        FROM thoughts t
        LEFT JOIN captures c ON t.capture_id = c.id
        ORDER BY t.created_at DESC`
@@ -30,7 +31,7 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const thought = await queryOne<ThoughtWithTranscript>(
-      `SELECT t.*, c.transcript
+      `SELECT t.*, c.transcript, c.audio_url
        FROM thoughts t
        LEFT JOIN captures c ON t.capture_id = c.id
        WHERE t.id = $1`,

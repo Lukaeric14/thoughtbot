@@ -92,14 +92,8 @@ async function processCapture(captureId: string, audioPath: string): Promise<voi
   } catch (error) {
     console.error(`[${captureId}] Processing error:`, error);
     // Don't throw - we don't want to affect the response
-  } finally {
-    // Clean up audio file after processing
-    try {
-      fs.unlinkSync(audioPath);
-    } catch (e) {
-      console.error(`Failed to delete audio file: ${audioPath}`);
-    }
   }
+  // Keep audio files for playback in dashboard
 }
 
 // POST /api/captures - Upload and process audio capture

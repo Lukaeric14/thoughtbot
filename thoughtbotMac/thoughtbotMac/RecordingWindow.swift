@@ -110,16 +110,40 @@ class RecordingWindow: NSObject {
 
     private func handleMouseEntered() {
         guard viewModel.widgetState == .idle else { return }
-        viewModel.isHovering = true
-        positionWindow(state: .expanded, animate: true)
-        viewModel.fetchData()
+
+        // Fade out, resize, then fade in with new content
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.1
+            self.window?.animator().alphaValue = 0
+        } completionHandler: {
+            self.viewModel.isHovering = true
+            self.positionWindow(state: .expanded, animate: false)
+            self.viewModel.fetchData()
+
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.15
+                self.window?.animator().alphaValue = 1
+            }
+        }
     }
 
     private func handleMouseExited() {
         guard viewModel.widgetState != .expanded else { return }
-        viewModel.isHovering = false
+
         if viewModel.widgetState == .idle {
-            positionWindow(state: .idle, animate: true)
+            // Fade out, resize, then fade in
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.1
+                self.window?.animator().alphaValue = 0
+            } completionHandler: {
+                self.viewModel.isHovering = false
+                self.positionWindow(state: .idle, animate: false)
+
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.15
+                    self.window?.animator().alphaValue = 1
+                }
+            }
         }
     }
 
@@ -164,13 +188,35 @@ class RecordingWindow: NSObject {
 
     func toggleExpanded() {
         if viewModel.widgetState == .expanded {
-            viewModel.widgetState = .idle
-            viewModel.isHovering = false
-            positionWindow(state: .idle, animate: true)
+            // Collapse: fade out, resize, fade in
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.1
+                self.window?.animator().alphaValue = 0
+            } completionHandler: {
+                self.viewModel.widgetState = .idle
+                self.viewModel.isHovering = false
+                self.positionWindow(state: .idle, animate: false)
+
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.15
+                    self.window?.animator().alphaValue = 1
+                }
+            }
         } else if viewModel.widgetState == .idle {
-            viewModel.widgetState = .expanded
-            positionWindow(state: .expanded, animate: true)
-            viewModel.fetchData()
+            // Expand: fade out, resize, fade in
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.1
+                self.window?.animator().alphaValue = 0
+            } completionHandler: {
+                self.viewModel.widgetState = .expanded
+                self.positionWindow(state: .expanded, animate: false)
+                self.viewModel.fetchData()
+
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.15
+                    self.window?.animator().alphaValue = 1
+                }
+            }
         }
     }
 

@@ -295,14 +295,12 @@ struct WidgetView: View {
     @ObservedObject var viewModel: WidgetViewModel
 
     var body: some View {
-        Group {
-            if viewModel.showExpanded {
-                ExpandedView(viewModel: viewModel)
-            } else {
-                StatusIndicatorView(viewModel: viewModel)
-            }
+        // No animation on content - window frame handles the animation
+        if viewModel.showExpanded {
+            ExpandedView(viewModel: viewModel)
+        } else {
+            StatusIndicatorView(viewModel: viewModel)
         }
-        .animation(.easeInOut(duration: 0.25), value: viewModel.showExpanded)
     }
 }
 

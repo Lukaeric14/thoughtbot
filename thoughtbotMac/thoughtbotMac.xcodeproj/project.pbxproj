@@ -7,62 +7,62 @@
 	objects = {
 
 /* Begin PBXContainerItemProxy section */
-		D15B47AD2EEFDD60001627C8 /* PBXContainerItemProxy */ = {
+		D15B48802EF010EF001627C8 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = D15B47942EEFDD5F001627C8 /* Project object */;
+			containerPortal = D15B48662EF010EE001627C8 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = D15B479B2EEFDD5F001627C8;
-			remoteInfo = thoughtbot;
+			remoteGlobalIDString = D15B486D2EF010EE001627C8;
+			remoteInfo = thoughtbotMac;
 		};
-		D15B47B72EEFDD60001627C8 /* PBXContainerItemProxy */ = {
+		D15B488A2EF010EF001627C8 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = D15B47942EEFDD5F001627C8 /* Project object */;
+			containerPortal = D15B48662EF010EE001627C8 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = D15B479B2EEFDD5F001627C8;
-			remoteInfo = thoughtbot;
+			remoteGlobalIDString = D15B486D2EF010EE001627C8;
+			remoteInfo = thoughtbotMac;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		D15B479C2EEFDD5F001627C8 /* thoughtbot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = thoughtbot.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		D15B47AC2EEFDD60001627C8 /* thoughtbotTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = thoughtbotTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		D15B47B62EEFDD60001627C8 /* thoughtbotUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = thoughtbotUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D15B486E2EF010EE001627C8 /* thoughtbotMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = thoughtbotMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D15B487F2EF010EF001627C8 /* thoughtbotMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = thoughtbotMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D15B48892EF010EF001627C8 /* thoughtbotMacUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = thoughtbotMacUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		D15B479E2EEFDD5F001627C8 /* thoughtbot */ = {
+		D15B48702EF010EE001627C8 /* thoughtbotMac */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = thoughtbot;
+			path = thoughtbotMac;
 			sourceTree = "<group>";
 		};
-		D15B47AF2EEFDD60001627C8 /* thoughtbotTests */ = {
+		D15B48822EF010EF001627C8 /* thoughtbotMacTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = thoughtbotTests;
+			path = thoughtbotMacTests;
 			sourceTree = "<group>";
 		};
-		D15B47B92EEFDD60001627C8 /* thoughtbotUITests */ = {
+		D15B488C2EF010EF001627C8 /* thoughtbotMacUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = thoughtbotUITests;
+			path = thoughtbotMacUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		D15B47992EEFDD5F001627C8 /* Frameworks */ = {
+		D15B486B2EF010EE001627C8 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		D15B47A92EEFDD60001627C8 /* Frameworks */ = {
+		D15B487C2EF010EF001627C8 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		D15B47B32EEFDD60001627C8 /* Frameworks */ = {
+		D15B48862EF010EF001627C8 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -72,22 +72,22 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		D15B47932EEFDD5F001627C8 = {
+		D15B48652EF010EE001627C8 = {
 			isa = PBXGroup;
 			children = (
-				D15B479E2EEFDD5F001627C8 /* thoughtbot */,
-				D15B47AF2EEFDD60001627C8 /* thoughtbotTests */,
-				D15B47B92EEFDD60001627C8 /* thoughtbotUITests */,
-				D15B479D2EEFDD5F001627C8 /* Products */,
+				D15B48702EF010EE001627C8 /* thoughtbotMac */,
+				D15B48822EF010EF001627C8 /* thoughtbotMacTests */,
+				D15B488C2EF010EF001627C8 /* thoughtbotMacUITests */,
+				D15B486F2EF010EE001627C8 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		D15B479D2EEFDD5F001627C8 /* Products */ = {
+		D15B486F2EF010EE001627C8 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				D15B479C2EEFDD5F001627C8 /* thoughtbot.app */,
-				D15B47AC2EEFDD60001627C8 /* thoughtbotTests.xctest */,
-				D15B47B62EEFDD60001627C8 /* thoughtbotUITests.xctest */,
+				D15B486E2EF010EE001627C8 /* thoughtbotMac.app */,
+				D15B487F2EF010EF001627C8 /* thoughtbotMacTests.xctest */,
+				D15B48892EF010EF001627C8 /* thoughtbotMacUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -95,134 +95,134 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		D15B479B2EEFDD5F001627C8 /* thoughtbot */ = {
+		D15B486D2EF010EE001627C8 /* thoughtbotMac */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = D15B47C02EEFDD60001627C8 /* Build configuration list for PBXNativeTarget "thoughtbot" */;
+			buildConfigurationList = D15B48932EF010EF001627C8 /* Build configuration list for PBXNativeTarget "thoughtbotMac" */;
 			buildPhases = (
-				D15B47982EEFDD5F001627C8 /* Sources */,
-				D15B47992EEFDD5F001627C8 /* Frameworks */,
-				D15B479A2EEFDD5F001627C8 /* Resources */,
+				D15B486A2EF010EE001627C8 /* Sources */,
+				D15B486B2EF010EE001627C8 /* Frameworks */,
+				D15B486C2EF010EE001627C8 /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				D15B479E2EEFDD5F001627C8 /* thoughtbot */,
+				D15B48702EF010EE001627C8 /* thoughtbotMac */,
 			);
-			name = thoughtbot;
+			name = thoughtbotMac;
 			packageProductDependencies = (
 			);
-			productName = thoughtbot;
-			productReference = D15B479C2EEFDD5F001627C8 /* thoughtbot.app */;
+			productName = thoughtbotMac;
+			productReference = D15B486E2EF010EE001627C8 /* thoughtbotMac.app */;
 			productType = "com.apple.product-type.application";
 		};
-		D15B47AB2EEFDD60001627C8 /* thoughtbotTests */ = {
+		D15B487E2EF010EF001627C8 /* thoughtbotMacTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = D15B47C32EEFDD60001627C8 /* Build configuration list for PBXNativeTarget "thoughtbotTests" */;
+			buildConfigurationList = D15B48962EF010EF001627C8 /* Build configuration list for PBXNativeTarget "thoughtbotMacTests" */;
 			buildPhases = (
-				D15B47A82EEFDD60001627C8 /* Sources */,
-				D15B47A92EEFDD60001627C8 /* Frameworks */,
-				D15B47AA2EEFDD60001627C8 /* Resources */,
+				D15B487B2EF010EF001627C8 /* Sources */,
+				D15B487C2EF010EF001627C8 /* Frameworks */,
+				D15B487D2EF010EF001627C8 /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				D15B47AE2EEFDD60001627C8 /* PBXTargetDependency */,
+				D15B48812EF010EF001627C8 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				D15B47AF2EEFDD60001627C8 /* thoughtbotTests */,
+				D15B48822EF010EF001627C8 /* thoughtbotMacTests */,
 			);
-			name = thoughtbotTests;
+			name = thoughtbotMacTests;
 			packageProductDependencies = (
 			);
-			productName = thoughtbotTests;
-			productReference = D15B47AC2EEFDD60001627C8 /* thoughtbotTests.xctest */;
+			productName = thoughtbotMacTests;
+			productReference = D15B487F2EF010EF001627C8 /* thoughtbotMacTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		D15B47B52EEFDD60001627C8 /* thoughtbotUITests */ = {
+		D15B48882EF010EF001627C8 /* thoughtbotMacUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = D15B47C62EEFDD60001627C8 /* Build configuration list for PBXNativeTarget "thoughtbotUITests" */;
+			buildConfigurationList = D15B48992EF010EF001627C8 /* Build configuration list for PBXNativeTarget "thoughtbotMacUITests" */;
 			buildPhases = (
-				D15B47B22EEFDD60001627C8 /* Sources */,
-				D15B47B32EEFDD60001627C8 /* Frameworks */,
-				D15B47B42EEFDD60001627C8 /* Resources */,
+				D15B48852EF010EF001627C8 /* Sources */,
+				D15B48862EF010EF001627C8 /* Frameworks */,
+				D15B48872EF010EF001627C8 /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				D15B47B82EEFDD60001627C8 /* PBXTargetDependency */,
+				D15B488B2EF010EF001627C8 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				D15B47B92EEFDD60001627C8 /* thoughtbotUITests */,
+				D15B488C2EF010EF001627C8 /* thoughtbotMacUITests */,
 			);
-			name = thoughtbotUITests;
+			name = thoughtbotMacUITests;
 			packageProductDependencies = (
 			);
-			productName = thoughtbotUITests;
-			productReference = D15B47B62EEFDD60001627C8 /* thoughtbotUITests.xctest */;
+			productName = thoughtbotMacUITests;
+			productReference = D15B48892EF010EF001627C8 /* thoughtbotMacUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		D15B47942EEFDD5F001627C8 /* Project object */ = {
+		D15B48662EF010EE001627C8 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1620;
 				LastUpgradeCheck = 1620;
 				TargetAttributes = {
-					D15B479B2EEFDD5F001627C8 = {
+					D15B486D2EF010EE001627C8 = {
 						CreatedOnToolsVersion = 16.2;
 					};
-					D15B47AB2EEFDD60001627C8 = {
+					D15B487E2EF010EF001627C8 = {
 						CreatedOnToolsVersion = 16.2;
-						TestTargetID = D15B479B2EEFDD5F001627C8;
+						TestTargetID = D15B486D2EF010EE001627C8;
 					};
-					D15B47B52EEFDD60001627C8 = {
+					D15B48882EF010EF001627C8 = {
 						CreatedOnToolsVersion = 16.2;
-						TestTargetID = D15B479B2EEFDD5F001627C8;
+						TestTargetID = D15B486D2EF010EE001627C8;
 					};
 				};
 			};
-			buildConfigurationList = D15B47972EEFDD5F001627C8 /* Build configuration list for PBXProject "thoughtbot" */;
+			buildConfigurationList = D15B48692EF010EE001627C8 /* Build configuration list for PBXProject "thoughtbotMac" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
 				Base,
 			);
-			mainGroup = D15B47932EEFDD5F001627C8;
+			mainGroup = D15B48652EF010EE001627C8;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
-			productRefGroup = D15B479D2EEFDD5F001627C8 /* Products */;
+			productRefGroup = D15B486F2EF010EE001627C8 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				D15B479B2EEFDD5F001627C8 /* thoughtbot */,
-				D15B47AB2EEFDD60001627C8 /* thoughtbotTests */,
-				D15B47B52EEFDD60001627C8 /* thoughtbotUITests */,
+				D15B486D2EF010EE001627C8 /* thoughtbotMac */,
+				D15B487E2EF010EF001627C8 /* thoughtbotMacTests */,
+				D15B48882EF010EF001627C8 /* thoughtbotMacUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		D15B479A2EEFDD5F001627C8 /* Resources */ = {
+		D15B486C2EF010EE001627C8 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		D15B47AA2EEFDD60001627C8 /* Resources */ = {
+		D15B487D2EF010EF001627C8 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		D15B47B42EEFDD60001627C8 /* Resources */ = {
+		D15B48872EF010EF001627C8 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -232,21 +232,21 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		D15B47982EEFDD5F001627C8 /* Sources */ = {
+		D15B486A2EF010EE001627C8 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		D15B47A82EEFDD60001627C8 /* Sources */ = {
+		D15B487B2EF010EF001627C8 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		D15B47B22EEFDD60001627C8 /* Sources */ = {
+		D15B48852EF010EF001627C8 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -256,20 +256,20 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		D15B47AE2EEFDD60001627C8 /* PBXTargetDependency */ = {
+		D15B48812EF010EF001627C8 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = D15B479B2EEFDD5F001627C8 /* thoughtbot */;
-			targetProxy = D15B47AD2EEFDD60001627C8 /* PBXContainerItemProxy */;
+			target = D15B486D2EF010EE001627C8 /* thoughtbotMac */;
+			targetProxy = D15B48802EF010EF001627C8 /* PBXContainerItemProxy */;
 		};
-		D15B47B82EEFDD60001627C8 /* PBXTargetDependency */ = {
+		D15B488B2EF010EF001627C8 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = D15B479B2EEFDD5F001627C8 /* thoughtbot */;
-			targetProxy = D15B47B72EEFDD60001627C8 /* PBXContainerItemProxy */;
+			target = D15B486D2EF010EE001627C8 /* thoughtbotMac */;
+			targetProxy = D15B488A2EF010EF001627C8 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		D15B47BE2EEFDD60001627C8 /* Debug */ = {
+		D15B48912EF010EF001627C8 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -321,18 +321,18 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				SDKROOT = iphoneos;
+				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
 			name = Debug;
 		};
-		D15B47BF2EEFDD60001627C8 /* Release */ = {
+		D15B48922EF010EF001627C8 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -378,77 +378,70 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
-				SDKROOT = iphoneos;
+				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
-				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
 		};
-		D15B47C12EEFDD60001627C8 /* Debug */ = {
+		D15B48942EF010EF001627C8 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = thoughtbotMac/thoughtbotMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "\"thoughtbot/Preview Content\"";
+				DEVELOPMENT_ASSET_PATHS = "\"thoughtbotMac/Preview Content\"";
 				DEVELOPMENT_TEAM = 75BKT5YX24;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Thoughtbot needs microphone access to capture voice notes";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
-					"@executable_path/Frameworks",
+					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = Nairon.thoughtbot;
+				PRODUCT_BUNDLE_IDENTIFIER = Nairon.thoughtbotMac;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
-		D15B47C22EEFDD60001627C8 /* Release */ = {
+		D15B48952EF010EF001627C8 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = thoughtbotMac/thoughtbotMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "\"thoughtbot/Preview Content\"";
+				DEVELOPMENT_ASSET_PATHS = "\"thoughtbotMac/Preview Content\"";
 				DEVELOPMENT_TEAM = 75BKT5YX24;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Thoughtbot needs microphone access to capture voice notes";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
-					"@executable_path/Frameworks",
+					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = Nairon.thoughtbot;
+				PRODUCT_BUNDLE_IDENTIFIER = Nairon.thoughtbotMac;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
-		D15B47C42EEFDD60001627C8 /* Debug */ = {
+		D15B48972EF010EF001627C8 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -456,18 +449,17 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 75BKT5YX24;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = Nairon.thoughtbotTests;
+				PRODUCT_BUNDLE_IDENTIFIER = Nairon.thoughtbotMacTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/thoughtbot.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/thoughtbot";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/thoughtbotMac.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/thoughtbotMac";
 			};
 			name = Debug;
 		};
-		D15B47C52EEFDD60001627C8 /* Release */ = {
+		D15B48982EF010EF001627C8 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -475,18 +467,17 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 75BKT5YX24;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = Nairon.thoughtbotTests;
+				PRODUCT_BUNDLE_IDENTIFIER = Nairon.thoughtbotMacTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/thoughtbot.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/thoughtbot";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/thoughtbotMac.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/thoughtbotMac";
 			};
 			name = Release;
 		};
-		D15B47C72EEFDD60001627C8 /* Debug */ = {
+		D15B489A2EF010EF001627C8 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -494,16 +485,15 @@
 				DEVELOPMENT_TEAM = 75BKT5YX24;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = Nairon.thoughtbotUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = Nairon.thoughtbotMacUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = thoughtbot;
+				TEST_TARGET_NAME = thoughtbotMac;
 			};
 			name = Debug;
 		};
-		D15B47C82EEFDD60001627C8 /* Release */ = {
+		D15B489B2EF010EF001627C8 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -511,55 +501,54 @@
 				DEVELOPMENT_TEAM = 75BKT5YX24;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = Nairon.thoughtbotUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = Nairon.thoughtbotMacUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = thoughtbot;
+				TEST_TARGET_NAME = thoughtbotMac;
 			};
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		D15B47972EEFDD5F001627C8 /* Build configuration list for PBXProject "thoughtbot" */ = {
+		D15B48692EF010EE001627C8 /* Build configuration list for PBXProject "thoughtbotMac" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				D15B47BE2EEFDD60001627C8 /* Debug */,
-				D15B47BF2EEFDD60001627C8 /* Release */,
+				D15B48912EF010EF001627C8 /* Debug */,
+				D15B48922EF010EF001627C8 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		D15B47C02EEFDD60001627C8 /* Build configuration list for PBXNativeTarget "thoughtbot" */ = {
+		D15B48932EF010EF001627C8 /* Build configuration list for PBXNativeTarget "thoughtbotMac" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				D15B47C12EEFDD60001627C8 /* Debug */,
-				D15B47C22EEFDD60001627C8 /* Release */,
+				D15B48942EF010EF001627C8 /* Debug */,
+				D15B48952EF010EF001627C8 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		D15B47C32EEFDD60001627C8 /* Build configuration list for PBXNativeTarget "thoughtbotTests" */ = {
+		D15B48962EF010EF001627C8 /* Build configuration list for PBXNativeTarget "thoughtbotMacTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				D15B47C42EEFDD60001627C8 /* Debug */,
-				D15B47C52EEFDD60001627C8 /* Release */,
+				D15B48972EF010EF001627C8 /* Debug */,
+				D15B48982EF010EF001627C8 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		D15B47C62EEFDD60001627C8 /* Build configuration list for PBXNativeTarget "thoughtbotUITests" */ = {
+		D15B48992EF010EF001627C8 /* Build configuration list for PBXNativeTarget "thoughtbotMacUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				D15B47C72EEFDD60001627C8 /* Debug */,
-				D15B47C82EEFDD60001627C8 /* Release */,
+				D15B489A2EF010EF001627C8 /* Debug */,
+				D15B489B2EF010EF001627C8 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
-	rootObject = D15B47942EEFDD5F001627C8 /* Project object */;
+	rootObject = D15B48662EF010EE001627C8 /* Project object */;
 }

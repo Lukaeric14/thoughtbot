@@ -314,12 +314,16 @@ class WidgetViewModel: ObservableObject {
         guard !isLoading else { return }
         isLoading = true
 
+        print("Starting data fetch...")
+
         Task {
             do {
                 async let fetchedThoughts = MacAPIClient.shared.fetchThoughts()
                 async let fetchedTasks = MacAPIClient.shared.fetchTasks()
 
                 let (t, tk) = try await (fetchedThoughts, fetchedTasks)
+
+                print("Fetched \(t.count) thoughts, \(tk.count) tasks")
 
                 await MainActor.run {
                     self.thoughts = t
@@ -389,15 +393,19 @@ struct ExpandedView: View {
                     .progressViewStyle(CircularProgressViewStyle(tint: .white))
                 Spacer()
             } else {
-                TabView(selection: $viewModel.selectedTab) {
-                    ThoughtsListView(thoughts: viewModel.thoughts)
-                        .tag(0)
-                    TasksListView(tasks: viewModel.tasks)
-                        .tag(1)
-                    ActionsListView()
-                        .tag(2)
+                // Manual tab content (no TabView to avoid macOS styling issues)
+                Group {
+                    switch viewModel.selectedTab {
+                    case 0:
+                        ThoughtsListView(thoughts: viewModel.thoughts)
+                    case 1:
+                        TasksListView(tasks: viewModel.tasks)
+                    case 2:
+                        ActionsListView()
+                    default:
+                        ThoughtsListView(thoughts: viewModel.thoughts)
+                    }
                 }
-                .tabViewStyle(.automatic)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

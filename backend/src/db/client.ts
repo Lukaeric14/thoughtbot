@@ -3,11 +3,12 @@ import { config } from '../config.js';
 
 const { Pool } = pg;
 
-// Parse SSL mode from connection string or default based on environment
-const useSSL = config.nodeEnv === 'production' ||
-               config.databaseUrl.includes('railway') ||
-               config.databaseUrl.includes('amazonaws.com') ||
-               config.databaseUrl.includes('proxy.rlwy.net');
+// Use SSL for any non-localhost database
+const isLocalhost = config.databaseUrl.includes('localhost') || config.databaseUrl.includes('127.0.0.1');
+const useSSL = !isLocalhost;
+
+console.log('Database URL host:', config.databaseUrl.split('@')[1]?.split('/')[0] || 'unknown');
+console.log('Using SSL:', useSSL);
 
 export const pool = new Pool({
   connectionString: config.databaseUrl,

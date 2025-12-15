@@ -3,9 +3,14 @@ import { config } from '../config.js';
 
 const { Pool } = pg;
 
+// Always use SSL for remote databases (Railway, etc.)
+const useSSL = config.databaseUrl.includes('railway.app') ||
+               config.databaseUrl.includes('amazonaws.com') ||
+               config.nodeEnv === 'production';
+
 export const pool = new Pool({
   connectionString: config.databaseUrl,
-  ssl: config.nodeEnv === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: useSSL ? { rejectUnauthorized: false } : false,
 });
 
 pool.on('error', (err) => {

@@ -5,6 +5,7 @@ enum MacAPIError: Error {
     case networkError(Error)
     case invalidResponse
     case serverError(Int)
+    case decodingError(Error)
 }
 
 struct MacCaptureResponse: Codable {
@@ -20,6 +21,57 @@ actor MacAPIClient {
 
     private init() {}
 
+    // MARK: - Fetch Thoughts
+    func fetchThoughts() async throws -> [ThoughtItem] {
+        let url = URL(string: "\(baseURL)/api/thoughts")!
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 30
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw MacAPIError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw MacAPIError.serverError(httpResponse.statusCode)
+        }
+
+        do {
+            return try JSONDecoder().decode([ThoughtItem].self, from: data)
+        } catch {
+            throw MacAPIError.decodingError(error)
+        }
+    }
+
+    // MARK: - Fetch Tasks
+    func fetchTasks() async throws -> [TaskItem] {
+        let url = URL(string: "\(baseURL)/api/tasks")!
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 30
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw MacAPIError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw MacAPIError.serverError(httpResponse.statusCode)
+        }
+
+        do {
+            return try JSONDecoder().decode([TaskItem].self, from: data)
+        } catch {
+            throw MacAPIError.decodingError(error)
+        }
+    }
+
+    // MARK: - Upload Capture
     func uploadCapture(audioURL: URL) async throws -> MacCaptureResponse {
         let boundary = UUID().uuidString
         let url = URL(string: "\(baseURL)/api/captures")!

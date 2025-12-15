@@ -25,6 +25,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var isRecording = false
+    private var isShiftHeld = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenuBar()
@@ -84,14 +85,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let flags = event.flags
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
 
+        // Track shift state
+        isShiftHeld = flags.contains(.maskShift)
+
         // Right Option key code is 61
         let isRightOptionPressed = keyCode == 61 && flags.contains(.maskAlternate)
         let isRightOptionReleased = keyCode == 61 && !flags.contains(.maskAlternate)
 
-        if isRightOptionPressed && !isRecording {
-            isRecording = true
-            DispatchQueue.main.async {
-                self.showRecordingWindow()
+        if isRightOptionPressed {
+            if isShiftHeld {
+                // Shift + Right Option = toggle expanded view
+                DispatchQueue.main.async {
+                    self.popoverWindow?.toggleExpanded()
+                }
+            } else if !isRecording {
+                // Just Right Option = start recording
+                isRecording = true
+                DispatchQueue.main.async {
+                    self.showRecordingWindow()
+                }
             }
         } else if isRightOptionReleased && isRecording {
             isRecording = false

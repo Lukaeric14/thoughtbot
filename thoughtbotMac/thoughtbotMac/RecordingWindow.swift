@@ -1,12 +1,44 @@
 import SwiftUI
 import AppKit
 
+// Custom tracking view for mouse enter/exit events
+class TrackingView: NSView {
+    var onMouseEntered: (() -> Void)?
+    var onMouseExited: (() -> Void)?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+
+        // Remove existing tracking areas
+        for area in trackingAreas {
+            removeTrackingArea(area)
+        }
+
+        // Add new tracking area
+        let trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onMouseEntered?()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onMouseExited?()
+    }
+}
+
 class RecordingWindow: NSObject {
     private var window: NSWindow?
     private var recorder: MacAudioRecorder?
     private var hostingView: NSHostingView<WidgetView>?
+    private var trackingView: TrackingView?
     private var viewModel = WidgetViewModel()
-    private var trackingArea: NSTrackingArea?
 
     // Size constants
     private let idleWidth: CGFloat = 12
@@ -23,8 +55,27 @@ class RecordingWindow: NSObject {
     }
 
     private func setupWindow() {
-        let contentView = WidgetView(viewModel: viewModel)
-        hostingView = NSHostingView(rootView: contentView)
+        let swiftUIView = WidgetView(viewModel: viewModel)
+        hostingView = NSHostingView(rootView: swiftUIView)
+
+        // Create tracking view as container
+        let tracking = TrackingView()
+        tracking.wantsLayer = true
+        tracking.layer?.backgroundColor = .clear
+
+        trackingView = tracking
+
+        // Add hosting view as subview
+        if let hosting = hostingView {
+            hosting.translatesAutoresizingMaskIntoConstraints = false
+            tracking.addSubview(hosting)
+            NSLayoutConstraint.activate([
+                hosting.topAnchor.constraint(equalTo: tracking.topAnchor),
+                hosting.bottomAnchor.constraint(equalTo: tracking.bottomAnchor),
+                hosting.leadingAnchor.constraint(equalTo: tracking.leadingAnchor),
+                hosting.trailingAnchor.constraint(equalTo: tracking.trailingAnchor)
+            ])
+        }
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: idleWidth, height: idleHeight),
@@ -33,7 +84,7 @@ class RecordingWindow: NSObject {
             defer: false
         )
 
-        window.contentView = hostingView
+        window.contentView = tracking
         window.backgroundColor = .clear
         window.isOpaque = false
         window.level = .screenSaver
@@ -42,46 +93,29 @@ class RecordingWindow: NSObject {
 
         self.window = window
 
+        // Setup hover callbacks
+        tracking.onMouseEntered = { [weak self] in
+            self?.handleMouseEntered()
+        }
+        tracking.onMouseExited = { [weak self] in
+            self?.handleMouseExited()
+        }
+
         // Position on right side of screen
         positionWindow(state: .idle, animate: false)
 
         // Show with idle state
         window.orderFrontRegardless()
-
-        // Setup hover tracking
-        setupHoverTracking()
     }
 
-    private func setupHoverTracking() {
-        guard let window = window, let contentView = window.contentView else { return }
-
-        // Remove existing tracking area
-        if let existing = trackingArea {
-            contentView.removeTrackingArea(existing)
-        }
-
-        // Create new tracking area
-        trackingArea = NSTrackingArea(
-            rect: contentView.bounds,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-
-        contentView.addTrackingArea(trackingArea!)
-
-        // Enable mouse events when not recording
-        window.ignoresMouseEvents = viewModel.widgetState == .recording || viewModel.widgetState == .processing
-    }
-
-    override func mouseEntered(with event: NSEvent) {
+    private func handleMouseEntered() {
         guard viewModel.widgetState == .idle else { return }
         viewModel.isHovering = true
         positionWindow(state: .expanded, animate: true)
         viewModel.fetchData()
     }
 
-    override func mouseExited(with event: NSEvent) {
+    private func handleMouseExited() {
         guard viewModel.widgetState != .expanded else { return }
         viewModel.isHovering = false
         if viewModel.widgetState == .idle {

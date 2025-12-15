@@ -30,6 +30,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenuBar()
         setupGlobalHotkey()
 
+        // Show status indicator immediately
+        popoverWindow = RecordingWindow()
+
         // Check accessibility permissions
         if !AXIsProcessTrusted() {
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
@@ -101,9 +104,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showRecordingWindow() {
-        if popoverWindow == nil {
-            popoverWindow = RecordingWindow()
-        }
         popoverWindow?.show()
     }
 

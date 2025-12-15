@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://postgres-production-46d5.up.railway.app';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-4605.up.railway.app';
 
 export interface Thought {
   id: string;

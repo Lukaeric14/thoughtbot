@@ -16,7 +16,7 @@ actor MacAPIClient {
     static let shared = MacAPIClient()
 
     // Same backend URL as iOS app
-    private let baseURL = "https://postgres-production-46d5.up.railway.app"
+    private let baseURL = "https://backend-production-4605.up.railway.app"
 
     private init() {}
 

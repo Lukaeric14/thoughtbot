@@ -2,7 +2,7 @@ import Foundation
 
 enum Config {
     // Railway backend URL
-    static let apiBaseURL = "https://postgres-production-46d5.up.railway.app"
+    static let apiBaseURL = "https://backend-production-4605.up.railway.app"
 
     static var capturesURL: URL {
         URL(string: "\(apiBaseURL)/api/captures")!

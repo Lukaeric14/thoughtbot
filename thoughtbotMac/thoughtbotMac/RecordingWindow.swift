@@ -45,8 +45,8 @@ class RecordingWindow: NSObject {
     private let idleHeight: CGFloat = 48
     private let activeWidth: CGFloat = 16
     private let activeHeight: CGFloat = 56
-    private let expandedWidth: CGFloat = 280
-    private let expandedHeight: CGFloat = 360
+    private let expandedWidth: CGFloat = 300
+    private let expandedHeight: CGFloat = 480
 
     override init() {
         super.init()
@@ -221,7 +221,12 @@ class RecordingWindow: NSObject {
     }
 
     func show() {
-        guard let window = window else { return }
+        guard let window = window else {
+            print("RecordingWindow.show() - window is nil")
+            return
+        }
+
+        print("RecordingWindow.show() - starting recording, current state: \(viewModel.widgetState)")
 
         // Start recording
         viewModel.widgetState = .recording
@@ -231,6 +236,7 @@ class RecordingWindow: NSObject {
         positionWindow(state: .recording, animate: true)
         window.orderFrontRegardless()
 
+        print("RecordingWindow.show() - calling recorder?.startRecording()")
         recorder?.startRecording()
     }
 
@@ -238,24 +244,86 @@ class RecordingWindow: NSObject {
         guard let recorder = recorder else { return }
 
         viewModel.widgetState = .processing
+        viewModel.processingCount += 1
+
+        // Remember current thought count to detect new one
+        let previousThoughtCount = viewModel.thoughts.count
+        let previousTaskCount = viewModel.tasks.count
 
         if let audioURL = recorder.stopRecording() {
             Task {
                 do {
                     _ = try await MacAPIClient.shared.uploadCapture(audioURL: audioURL)
                     try? FileManager.default.removeItem(at: audioURL)
+
+                    // Poll until new data appears (backend finished processing)
+                    await self.waitForNewCapture(previousThoughtCount: previousThoughtCount, previousTaskCount: previousTaskCount)
+
                 } catch {
                     print("Upload error: \(error)")
-                }
-
-                await MainActor.run {
-                    self.viewModel.widgetState = .idle
-                    self.positionWindow(state: .idle, animate: true)
+                    await MainActor.run {
+                        self.viewModel.processingCount = max(0, self.viewModel.processingCount - 1)
+                        self.viewModel.widgetState = .idle
+                        self.positionWindow(state: .idle, animate: true)
+                    }
                 }
             }
         } else {
+            viewModel.processingCount = max(0, viewModel.processingCount - 1)
             viewModel.widgetState = .idle
             positionWindow(state: .idle, animate: true)
+        }
+    }
+
+    private func waitForNewCapture(previousThoughtCount: Int, previousTaskCount: Int) async {
+        // Poll for up to 30 seconds waiting for backend to process
+        for _ in 0..<30 {
+            do {
+                let thoughts = try await MacAPIClient.shared.fetchThoughts()
+                let tasks = try await MacAPIClient.shared.fetchTasks()
+
+                // Check if new data appeared
+                if thoughts.count > previousThoughtCount || tasks.count > previousTaskCount {
+                    await MainActor.run {
+                        self.viewModel.thoughts = thoughts
+                        self.viewModel.tasks = tasks
+                        self.viewModel.processingCount = max(0, self.viewModel.processingCount - 1)
+                        self.viewModel.widgetState = .idle
+                        self.positionWindow(state: .idle, animate: true)
+
+                        // Highlight the new item
+                        if thoughts.count > previousThoughtCount, let newThought = thoughts.first {
+                            self.viewModel.highlightedThoughtId = newThought.id
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                                withAnimation {
+                                    self.viewModel.highlightedThoughtId = nil
+                                }
+                            }
+                        }
+                        if tasks.count > previousTaskCount, let newTask = tasks.first {
+                            self.viewModel.highlightedTaskId = newTask.id
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                                withAnimation {
+                                    self.viewModel.highlightedTaskId = nil
+                                }
+                            }
+                        }
+                    }
+                    return
+                }
+            } catch {
+                print("Polling error: \(error)")
+            }
+
+            // Wait 1 second before next poll
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+
+        // Timeout - stop processing anyway
+        await MainActor.run {
+            self.viewModel.processingCount = max(0, self.viewModel.processingCount - 1)
+            self.viewModel.widgetState = .idle
+            self.positionWindow(state: .idle, animate: true)
         }
     }
 
@@ -305,21 +373,32 @@ class WidgetViewModel: ObservableObject {
     @Published var thoughts: [ThoughtItem] = []
     @Published var tasks: [TaskItem] = []
     @Published var isLoading = false
+    @Published var processingCount = 0
+    @Published var highlightedThoughtId: String?
+    @Published var highlightedTaskId: String?
+    @Published var selectedCategory: String = "personal" // "personal" or "business"
 
     var isRecording: Bool { widgetState == .recording }
     var isSending: Bool { widgetState == .processing }
     var showExpanded: Bool { widgetState == .expanded || isHovering }
+    var isProcessing: Bool { processingCount > 0 || widgetState == .processing }
+
+    func toggleCategory() {
+        selectedCategory = selectedCategory == "personal" ? "business" : "personal"
+        fetchData()
+    }
 
     func fetchData() {
         guard !isLoading else { return }
         isLoading = true
 
-        print("Starting data fetch...")
+        let category = selectedCategory
+        print("Starting data fetch for category: \(category)...")
 
         Task {
             do {
-                async let fetchedThoughts = MacAPIClient.shared.fetchThoughts()
-                async let fetchedTasks = MacAPIClient.shared.fetchTasks()
+                async let fetchedThoughts = MacAPIClient.shared.fetchThoughts(category: category)
+                async let fetchedTasks = MacAPIClient.shared.fetchTasks(category: category)
 
                 let (t, tk) = try await (fetchedThoughts, fetchedTasks)
 
@@ -335,6 +414,65 @@ class WidgetViewModel: ObservableObject {
                 await MainActor.run {
                     self.isLoading = false
                 }
+            }
+        }
+    }
+
+    func fetchDataAndHighlightRecent() {
+        Task {
+            do {
+                async let fetchedThoughts = MacAPIClient.shared.fetchThoughts()
+                async let fetchedTasks = MacAPIClient.shared.fetchTasks()
+
+                let (t, tk) = try await (fetchedThoughts, fetchedTasks)
+
+                await MainActor.run {
+                    self.thoughts = t
+                    self.tasks = tk
+
+                    // Highlight the most recent thought
+                    if let firstThought = t.first {
+                        self.highlightedThoughtId = firstThought.id
+                        // Clear after delay
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                            withAnimation {
+                                self.highlightedThoughtId = nil
+                            }
+                        }
+                    }
+                }
+            } catch {
+                print("Fetch error: \(error)")
+            }
+        }
+    }
+
+    func deleteThought(id: String) {
+        Task {
+            do {
+                try await MacAPIClient.shared.deleteThought(id: id)
+                await MainActor.run {
+                    withAnimation {
+                        self.thoughts.removeAll { $0.id == id }
+                    }
+                }
+            } catch {
+                print("Delete thought error: \(error)")
+            }
+        }
+    }
+
+    func deleteTask(id: String) {
+        Task {
+            do {
+                try await MacAPIClient.shared.deleteTask(id: id)
+                await MainActor.run {
+                    withAnimation {
+                        self.tasks.removeAll { $0.id == id }
+                    }
+                }
+            } catch {
+                print("Delete task error: \(error)")
             }
         }
     }
@@ -360,25 +498,44 @@ struct ExpandedView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Tab bar
-            HStack(spacing: 0) {
-                TabButton(title: "Thoughts", isSelected: viewModel.selectedTab == 0) {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        viewModel.selectedTab = 0
+            // Header with category toggle and tabs
+            HStack(spacing: 8) {
+                // Category toggle button (top left) - gray icon
+                Button(action: { viewModel.toggleCategory() }) {
+                    Image(systemName: viewModel.selectedCategory == "personal" ? "house.fill" : "building.2.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(.gray)
+                        .frame(width: 28, height: 28)
+                        .background(
+                            Circle()
+                                .fill(Color.white.opacity(0.1))
+                        )
+                }
+                .buttonStyle(.plain)
+                .help(viewModel.selectedCategory == "personal" ? "Switch to Business" : "Switch to Personal")
+
+                // Tab bar
+                HStack(spacing: 0) {
+                    TabButton(title: "Thoughts", isSelected: viewModel.selectedTab == 0) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            viewModel.selectedTab = 0
+                        }
+                    }
+                    TabButton(title: "Tasks", isSelected: viewModel.selectedTab == 1) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            viewModel.selectedTab = 1
+                        }
+                    }
+                    TabButton(title: "Actions", isSelected: viewModel.selectedTab == 2) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            viewModel.selectedTab = 2
+                        }
                     }
                 }
-                TabButton(title: "Tasks", isSelected: viewModel.selectedTab == 1) {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        viewModel.selectedTab = 1
-                    }
-                }
-                TabButton(title: "Actions", isSelected: viewModel.selectedTab == 2) {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        viewModel.selectedTab = 2
-                    }
-                }
+
+                Spacer()
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 12)
             .padding(.top, 12)
 
             Divider()
@@ -397,13 +554,13 @@ struct ExpandedView: View {
                 Group {
                     switch viewModel.selectedTab {
                     case 0:
-                        ThoughtsListView(thoughts: viewModel.thoughts)
+                        ThoughtsListView(viewModel: viewModel)
                     case 1:
-                        TasksListView(tasks: viewModel.tasks)
+                        TasksListView(viewModel: viewModel)
                     case 2:
                         ActionsListView()
                     default:
-                        ThoughtsListView(thoughts: viewModel.thoughts)
+                        ThoughtsListView(viewModel: viewModel)
                     }
                 }
             }
@@ -443,16 +600,18 @@ struct TabButton: View {
 
 // MARK: - Thoughts List
 struct ThoughtsListView: View {
-    let thoughts: [ThoughtItem]
+    @ObservedObject var viewModel: WidgetViewModel
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 8) {
-                if thoughts.isEmpty {
+                if viewModel.thoughts.isEmpty {
                     EmptyStateView(icon: "lightbulb", message: "No thoughts yet")
                 } else {
-                    ForEach(thoughts.prefix(10)) { thought in
-                        ThoughtRow(thought: thought)
+                    ForEach(viewModel.thoughts.prefix(10)) { thought in
+                        ThoughtRow(thought: thought, isHighlighted: viewModel.highlightedThoughtId == thought.id) {
+                            viewModel.deleteThought(id: thought.id)
+                        }
                     }
                 }
             }
@@ -463,39 +622,69 @@ struct ThoughtsListView: View {
 
 struct ThoughtRow: View {
     let thought: ThoughtItem
+    var isHighlighted: Bool = false
+    var onDelete: () -> Void
+
+    @State private var isHovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(thought.text)
-                .font(.system(size: 12))
-                .foregroundColor(.white)
-                .lineLimit(2)
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(thought.text)
+                    .font(.system(size: 12))
+                    .foregroundColor(.white)
+                    .lineLimit(2)
 
-            Text(formatRelativeTime(thought.created_at))
-                .font(.system(size: 10))
-                .foregroundColor(.white.opacity(0.5))
+                Text(formatRelativeTime(thought.created_at))
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.5))
+            }
+
+            Spacer()
+
+            // Delete button on hover
+            if isHovering {
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11))
+                        .foregroundColor(.red.opacity(0.8))
+                }
+                .buttonStyle(.plain)
+                .transition(.opacity.combined(with: .scale))
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color.white.opacity(0.08))
+                .fill(isHighlighted ? Color.accentColor.opacity(0.3) : (isHovering ? Color.white.opacity(0.12) : Color.white.opacity(0.08)))
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isHighlighted ? Color.accentColor : Color.clear, lineWidth: 1)
+        )
+        .animation(.easeInOut(duration: 0.15), value: isHovering)
+        .animation(.easeInOut(duration: 0.3), value: isHighlighted)
+        .onHover { hovering in
+            isHovering = hovering
+        }
     }
 }
 
 // MARK: - Tasks List
 struct TasksListView: View {
-    let tasks: [TaskItem]
+    @ObservedObject var viewModel: WidgetViewModel
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 8) {
-                if tasks.isEmpty {
+                if viewModel.tasks.isEmpty {
                     EmptyStateView(icon: "checkmark.circle", message: "No tasks yet")
                 } else {
-                    ForEach(tasks.filter { $0.status == "open" }.prefix(10)) { task in
-                        TaskRow(task: task)
+                    ForEach(viewModel.tasks.filter { $0.status == "open" }.prefix(10)) { task in
+                        TaskRow(task: task, isHighlighted: viewModel.highlightedTaskId == task.id) {
+                            viewModel.deleteTask(id: task.id)
+                        }
                     }
                 }
             }
@@ -506,6 +695,10 @@ struct TasksListView: View {
 
 struct TaskRow: View {
     let task: TaskItem
+    var isHighlighted: Bool = false
+    var onDelete: () -> Void
+
+    @State private var isHovering = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -525,13 +718,33 @@ struct TaskRow: View {
             }
 
             Spacer()
+
+            // Delete button on hover
+            if isHovering {
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11))
+                        .foregroundColor(.red.opacity(0.8))
+                }
+                .buttonStyle(.plain)
+                .transition(.opacity.combined(with: .scale))
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color.white.opacity(0.08))
+                .fill(isHighlighted ? Color.accentColor.opacity(0.3) : (isHovering ? Color.white.opacity(0.12) : Color.white.opacity(0.08)))
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isHighlighted ? Color.accentColor : Color.clear, lineWidth: 1)
+        )
+        .animation(.easeInOut(duration: 0.15), value: isHovering)
+        .animation(.easeInOut(duration: 0.3), value: isHighlighted)
+        .onHover { hovering in
+            isHovering = hovering
+        }
     }
 }
 
@@ -567,6 +780,7 @@ struct EmptyStateView: View {
 // MARK: - Status Indicator (Collapsed)
 struct StatusIndicatorView: View {
     @ObservedObject var viewModel: WidgetViewModel
+    @State private var rotation: Double = 0
 
     private var backgroundOpacity: Double {
         viewModel.widgetState == .idle ? 0.4 : 0.85
@@ -586,11 +800,34 @@ struct StatusIndicatorView: View {
             // Content based on state
             switch viewModel.widgetState {
             case .idle:
-                IdleIndicator()
+                if viewModel.isProcessing {
+                    // Show processing indicator in idle with count
+                    VStack(spacing: 2) {
+                        // Spinning ring
+                        Circle()
+                            .trim(from: 0, to: 0.7)
+                            .stroke(Color.accentColor, lineWidth: 1.5)
+                            .frame(width: 8, height: 8)
+                            .rotationEffect(.degrees(rotation))
+                            .onAppear {
+                                withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
+                                    rotation = 360
+                                }
+                            }
+
+                        if viewModel.processingCount > 0 {
+                            Text("\(viewModel.processingCount)")
+                                .font(.system(size: 6, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                    }
+                } else {
+                    IdleIndicator()
+                }
             case .recording:
                 RecordingIndicator()
             case .processing:
-                ProcessingIndicator()
+                MacProcessingIndicator()
             case .expanded:
                 EmptyView()
             }
@@ -647,7 +884,7 @@ struct SoundWaveBar: View {
 }
 
 // MARK: - Processing State (Loading Dots)
-struct ProcessingIndicator: View {
+struct MacProcessingIndicator: View {
     let dotCount = 5
 
     var body: some View {
@@ -713,10 +950,28 @@ private func formatDate(_ date: Date) -> String {
 }
 
 func formatDueDate(_ dateString: String) -> String {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "yyyy-MM-dd"
+    // Try multiple date formats
+    let date: Date?
 
-    guard let date = formatter.date(from: dateString) else { return dateString }
+    // Try ISO 8601 with fractional seconds
+    let isoFormatter = ISO8601DateFormatter()
+    isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let d = isoFormatter.date(from: dateString) {
+        date = d
+    } else {
+        // Try ISO 8601 without fractional seconds
+        isoFormatter.formatOptions = [.withInternetDateTime]
+        if let d = isoFormatter.date(from: dateString) {
+            date = d
+        } else {
+            // Try simple date format
+            let simpleFormatter = DateFormatter()
+            simpleFormatter.dateFormat = "yyyy-MM-dd"
+            date = simpleFormatter.date(from: dateString)
+        }
+    }
+
+    guard let date = date else { return dateString }
 
     let calendar = Calendar.current
     let today = calendar.startOfDay(for: Date())
@@ -726,16 +981,34 @@ func formatDueDate(_ dateString: String) -> String {
     if days == 0 { return "Today" }
     if days == 1 { return "Tomorrow" }
     if days == -1 { return "Yesterday" }
-    if days < -1 { return "\(abs(days)) days overdue" }
+    if days < -1 { return "\(abs(days))d overdue" }
+    if days > 1 && days <= 7 { return "In \(days) days" }
 
-    return formatter.string(from: date)
+    let outputFormatter = DateFormatter()
+    outputFormatter.dateStyle = .medium
+    return outputFormatter.string(from: date)
 }
 
 func isOverdue(_ dateString: String) -> Bool {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "yyyy-MM-dd"
+    // Try multiple date formats
+    let date: Date?
 
-    guard let date = formatter.date(from: dateString) else { return false }
+    let isoFormatter = ISO8601DateFormatter()
+    isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let d = isoFormatter.date(from: dateString) {
+        date = d
+    } else {
+        isoFormatter.formatOptions = [.withInternetDateTime]
+        if let d = isoFormatter.date(from: dateString) {
+            date = d
+        } else {
+            let simpleFormatter = DateFormatter()
+            simpleFormatter.dateFormat = "yyyy-MM-dd"
+            date = simpleFormatter.date(from: dateString)
+        }
+    }
+
+    guard let date = date else { return false }
 
     let calendar = Calendar.current
     let today = calendar.startOfDay(for: Date())

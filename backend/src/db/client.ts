@@ -3,15 +3,16 @@ import { config } from '../config.js';
 
 const { Pool } = pg;
 
-// Always use SSL for non-localhost (Railway requires it)
+// Railway proxy connections don't need SSL (proxy handles it)
 const isLocalhost = config.databaseUrl.includes('localhost') || config.databaseUrl.includes('127.0.0.1');
+const isProxy = config.databaseUrl.includes('.proxy.rlwy.net');
 
 console.log('Database URL host:', config.databaseUrl.split('@')[1]?.split('/')[0] || 'unknown');
-console.log('Using SSL:', !isLocalhost);
+console.log('Using SSL:', !isLocalhost && !isProxy);
 
 export const pool = new Pool({
   connectionString: config.databaseUrl,
-  ssl: isLocalhost ? false : {
+  ssl: (isLocalhost || isProxy) ? false : {
     rejectUnauthorized: false,
   },
   connectionTimeoutMillis: 30000,

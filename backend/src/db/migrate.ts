@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS thoughts (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   text TEXT NOT NULL,
   canonical_text TEXT,
+  category VARCHAR(20) DEFAULT 'personal',
   capture_id UUID REFERENCES captures(id) ON DELETE SET NULL
 );
 
@@ -33,6 +34,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   canonical_title TEXT,
   due_date DATE NOT NULL,
   status VARCHAR(20) DEFAULT 'open',
+  category VARCHAR(20) DEFAULT 'personal',
   last_updated_at TIMESTAMPTZ DEFAULT NOW(),
   capture_id UUID REFERENCES captures(id) ON DELETE SET NULL
 );
@@ -43,6 +45,20 @@ CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
 CREATE INDEX IF NOT EXISTS idx_tasks_canonical ON tasks(canonical_title);
 CREATE INDEX IF NOT EXISTS idx_tasks_canonical_trgm ON tasks USING gin (canonical_title gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_captures_created ON captures(created_at);
+CREATE INDEX IF NOT EXISTS idx_thoughts_category ON thoughts(category);
+CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks(category);
+
+-- Add category columns if they don't exist (for existing databases)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'thoughts' AND column_name = 'category') THEN
+    ALTER TABLE thoughts ADD COLUMN category VARCHAR(20) DEFAULT 'personal';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tasks' AND column_name = 'category') THEN
+    ALTER TABLE tasks ADD COLUMN category VARCHAR(20) DEFAULT 'personal';
+  END IF;
+END $$;
+
 `;
 
 async function migrate() {

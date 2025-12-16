@@ -1,6 +1,7 @@
 export type ClassificationType = 'thought' | 'task_create' | 'task_update';
 export type TaskStatus = 'open' | 'done' | 'cancelled';
 export type TaskUpdateOperation = 'complete' | 'cancel' | 'postpone' | 'set_due_date' | 'rename';
+export type Category = 'personal' | 'business';
 
 export interface ThoughtPayload {
   text: string;
@@ -19,6 +20,7 @@ export interface TaskUpdatePayload {
 
 export interface ClassificationResult {
   type: ClassificationType;
+  category: Category;
   thought?: ThoughtPayload;
   task_create?: TaskCreatePayload;
   task_update?: TaskUpdatePayload;
@@ -38,6 +40,7 @@ export interface Thought {
   created_at: Date;
   text: string;
   canonical_text: string | null;
+  category: Category;
   capture_id: string | null;
 }
 
@@ -48,6 +51,7 @@ export interface Task {
   canonical_title: string | null;
   due_date: Date;
   status: TaskStatus;
+  category: Category;
   last_updated_at: Date;
   capture_id: string | null;
 }

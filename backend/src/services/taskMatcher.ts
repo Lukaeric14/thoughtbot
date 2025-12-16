@@ -1,6 +1,6 @@
 import { query, queryOne } from '../db/client.js';
 import { normalizeText, findDuplicateTask, findMatchingTask } from './deduplication.js';
-import type { Task, Thought, TaskCreatePayload, TaskUpdatePayload, ThoughtPayload } from '../types/index.js';
+import type { Task, Thought, TaskCreatePayload, TaskUpdatePayload, ThoughtPayload, Category } from '../types/index.js';
 
 function getTodayDate(): string {
   return new Date().toISOString().split('T')[0];
@@ -8,15 +8,16 @@ function getTodayDate(): string {
 
 export async function createThought(
   payload: ThoughtPayload,
-  captureId: string
+  captureId: string,
+  category: Category = 'personal'
 ): Promise<Thought> {
   const canonicalText = normalizeText(payload.text);
 
   const result = await queryOne<Thought>(
-    `INSERT INTO thoughts (text, canonical_text, capture_id)
-     VALUES ($1, $2, $3)
+    `INSERT INTO thoughts (text, canonical_text, category, capture_id)
+     VALUES ($1, $2, $3, $4)
      RETURNING *`,
-    [payload.text, canonicalText, captureId]
+    [payload.text, canonicalText, category, captureId]
   );
 
   if (!result) {
@@ -28,7 +29,8 @@ export async function createThought(
 
 export async function createTask(
   payload: TaskCreatePayload,
-  captureId: string
+  captureId: string,
+  category: Category = 'personal'
 ): Promise<{ task: Task; isDuplicate: boolean }> {
   const canonicalTitle = normalizeText(payload.title);
   const dueDate = payload.due_date || getTodayDate();
@@ -41,10 +43,10 @@ export async function createTask(
   }
 
   const result = await queryOne<Task>(
-    `INSERT INTO tasks (title, canonical_title, due_date, status, capture_id)
-     VALUES ($1, $2, $3, 'open', $4)
+    `INSERT INTO tasks (title, canonical_title, due_date, status, category, capture_id)
+     VALUES ($1, $2, $3, 'open', $4, $5)
      RETURNING *`,
-    [payload.title, canonicalTitle, dueDate, captureId]
+    [payload.title, canonicalTitle, dueDate, category, captureId]
   );
 
   if (!result) {
@@ -56,7 +58,8 @@ export async function createTask(
 
 export async function updateTask(
   payload: TaskUpdatePayload,
-  captureId: string
+  captureId: string,
+  category: Category = 'personal'
 ): Promise<{ task: Task; matched: boolean }> {
   // Try to find matching task
   const matchingTask = await findMatchingTask(payload.target_hint);
@@ -117,10 +120,10 @@ export async function updateTask(
   const canonicalTitle = normalizeText(title);
 
   const newTask = await queryOne<Task>(
-    `INSERT INTO tasks (title, canonical_title, due_date, status, capture_id)
-     VALUES ($1, $2, $3, 'open', $4)
+    `INSERT INTO tasks (title, canonical_title, due_date, status, category, capture_id)
+     VALUES ($1, $2, $3, 'open', $4, $5)
      RETURNING *`,
-    [title, canonicalTitle, dueDate, captureId]
+    [title, canonicalTitle, dueDate, category, captureId]
   );
 
   if (!newTask) {

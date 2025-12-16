@@ -28,17 +28,22 @@ For task_update:
 - target_hint: key phrase to match against existing tasks
 - new_due_date: the new date if rescheduling, otherwise null
 
+Category classification (always required):
+- "personal": Personal life, family, friends, hobbies, health, home, errands, personal finance, self-improvement
+- "business": Work, clients, projects, meetings, professional tasks, company matters, business communications
+
 Today's date is: ${getTodayDate()}
 
 Output ONLY valid JSON with no additional text. Use this exact schema:
 {
   "type": "thought" | "task_create" | "task_update",
+  "category": "personal" | "business",
   "thought": { "text": "the original thought text" },
   "task_create": { "title": "imperative task title", "due_date": "YYYY-MM-DD or null" },
   "task_update": { "operation": "complete|cancel|postpone|set_due_date", "target_hint": "phrase to match task", "new_due_date": "YYYY-MM-DD or null" }
 }
 
-Only include the relevant field based on type (thought, task_create, or task_update).
+Only include the relevant field based on type (thought, task_create, or task_update). Always include category.
 
 Transcript: "${transcript}"`;
 }

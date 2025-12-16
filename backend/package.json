@@ -1,6 +1,6 @@
 {
   "name": "thoughtbot-backend",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Voice-first thought and task capture backend",
   "type": "module",
   "engines": {
@@ -11,7 +11,8 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "db:migrate": "tsx src/db/migrate.ts"
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:set-tasks-business": "tsx src/db/set-tasks-business.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",

@@ -7,12 +7,14 @@ const router = Router();
 // Extended task type with transcript
 interface TaskWithTranscript extends Task {
   transcript: string | null;
+  category: string;
 }
 
-// GET /api/tasks - List all tasks
+// GET /api/tasks - List all tasks (optionally filtered by status and category)
 router.get('/', async (req, res) => {
   try {
     const status = req.query.status as TaskStatus | undefined;
+    const category = req.query.category as string | undefined;
 
     let sql = `
       SELECT t.*, c.transcript
@@ -20,10 +22,20 @@ router.get('/', async (req, res) => {
       LEFT JOIN captures c ON t.capture_id = c.id
     `;
     const params: unknown[] = [];
+    const conditions: string[] = [];
 
     if (status) {
-      sql += ` WHERE t.status = $1`;
+      conditions.push(`t.status = $${params.length + 1}`);
       params.push(status);
+    }
+
+    if (category) {
+      conditions.push(`t.category = $${params.length + 1}`);
+      params.push(category);
+    }
+
+    if (conditions.length > 0) {
+      sql += ` WHERE ${conditions.join(' AND ')}`;
     }
 
     sql += ` ORDER BY t.created_at DESC`;

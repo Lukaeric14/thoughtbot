@@ -8,18 +8,29 @@ const router = Router();
 interface ThoughtWithTranscript extends Thought {
   transcript: string | null;
   audio_url: string | null;
+  category: string;
 }
 
-// GET /api/thoughts - List all thoughts
+// GET /api/thoughts - List all thoughts (optionally filtered by category)
 router.get('/', async (req, res) => {
   try {
-    const thoughts = await query<ThoughtWithTranscript>(
-      `SELECT t.*, c.transcript, c.audio_url
-       FROM thoughts t
-       LEFT JOIN captures c ON t.capture_id = c.id
-       ORDER BY t.created_at DESC`
-    );
+    const category = req.query.category as string | undefined;
 
+    let sql = `
+      SELECT t.*, c.transcript, c.audio_url
+      FROM thoughts t
+      LEFT JOIN captures c ON t.capture_id = c.id
+    `;
+    const params: unknown[] = [];
+
+    if (category) {
+      sql += ` WHERE t.category = $1`;
+      params.push(category);
+    }
+
+    sql += ` ORDER BY t.created_at DESC`;
+
+    const thoughts = await query<ThoughtWithTranscript>(sql, params);
     res.json(thoughts);
   } catch (error) {
     console.error('Get thoughts error:', error);

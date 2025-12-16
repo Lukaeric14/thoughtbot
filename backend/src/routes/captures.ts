@@ -65,25 +65,27 @@ async function processCapture(captureId: string, audioPath: string): Promise<voi
     );
 
     // Step 3: Create/update entities based on classification
+    const category = classification.category || 'personal';
+
     switch (classification.type) {
       case 'thought':
         if (classification.thought) {
-          const thought = await createThought(classification.thought, captureId);
-          console.log(`[${captureId}] Created thought: ${thought.id}`);
+          const thought = await createThought(classification.thought, captureId, category);
+          console.log(`[${captureId}] Created thought: ${thought.id} (${category})`);
         }
         break;
 
       case 'task_create':
         if (classification.task_create) {
-          const { task, isDuplicate } = await createTask(classification.task_create, captureId);
-          console.log(`[${captureId}] ${isDuplicate ? 'Duplicate found' : 'Created task'}: ${task.id} - "${task.title}"`);
+          const { task, isDuplicate } = await createTask(classification.task_create, captureId, category);
+          console.log(`[${captureId}] ${isDuplicate ? 'Duplicate found' : 'Created task'}: ${task.id} - "${task.title}" (${category})`);
         }
         break;
 
       case 'task_update':
         if (classification.task_update) {
-          const { task, matched } = await updateTask(classification.task_update, captureId);
-          console.log(`[${captureId}] ${matched ? 'Updated' : 'Created new'} task: ${task.id} - "${task.title}"`);
+          const { task, matched } = await updateTask(classification.task_update, captureId, category);
+          console.log(`[${captureId}] ${matched ? 'Updated' : 'Created new'} task: ${task.id} - "${task.title}" (${category})`);
         }
         break;
     }

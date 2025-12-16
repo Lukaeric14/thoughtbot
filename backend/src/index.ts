@@ -133,6 +133,22 @@ app.post('/admin/migrate-categories', async (req, res) => {
   }
 });
 
+// Admin: Set all tasks to business (one-time fix)
+app.post('/admin/set-tasks-business', async (req, res) => {
+  try {
+    const tasksResult = await pool.query(`UPDATE tasks SET category = 'business'`);
+    const taskCounts = await pool.query(`SELECT category, COUNT(*) as count FROM tasks GROUP BY category`);
+    res.json({
+      success: true,
+      tasksUpdated: tasksResult.rowCount,
+      taskCounts: taskCounts.rows
+    });
+  } catch (error) {
+    console.error('Set tasks business error:', error);
+    res.status(500).json({ error: 'Failed', details: String(error) });
+  }
+});
+
 // API routes
 app.use('/api/captures', capturesRouter);
 app.use('/api/thoughts', thoughtsRouter);

@@ -40,7 +40,9 @@ router.get('/', async (req, res) => {
 
     sql += ` ORDER BY t.created_at DESC`;
 
+    console.log('Tasks query:', sql, 'params:', params);
     const tasks = await query<TaskWithTranscript>(sql, params);
+    console.log('Tasks returned:', tasks.length);
     res.json(tasks);
   } catch (error) {
     console.error('Get tasks error:', error);

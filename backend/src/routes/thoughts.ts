@@ -8,7 +8,6 @@ const router = Router();
 interface ThoughtWithTranscript extends Thought {
   transcript: string | null;
   audio_url: string | null;
-  category: string;
 }
 
 // GET /api/thoughts - List all thoughts (optionally filtered by category)

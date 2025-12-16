@@ -7,7 +7,6 @@ const router = Router();
 // Extended task type with transcript
 interface TaskWithTranscript extends Task {
   transcript: string | null;
-  category: string;
 }
 
 // GET /api/tasks - List all tasks (optionally filtered by status and category)

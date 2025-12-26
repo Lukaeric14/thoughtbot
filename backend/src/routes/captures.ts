@@ -59,9 +59,10 @@ async function processCapture(captureId: string, audioPath: string): Promise<voi
     const classification = await classifyTranscript(transcript);
     console.log(`[${captureId}] Classification:`, classification);
 
+    // Store raw LLM output but NOT classification yet (client polls for this)
     await queryOne(
-      `UPDATE captures SET classification = $1, raw_llm_output = $2 WHERE id = $3`,
-      [classification.type, JSON.stringify(classification), captureId]
+      `UPDATE captures SET raw_llm_output = $1 WHERE id = $2`,
+      [JSON.stringify(classification), captureId]
     );
 
     // Step 3: Create/update entities based on classification
@@ -89,6 +90,12 @@ async function processCapture(captureId: string, audioPath: string): Promise<voi
         }
         break;
     }
+
+    // Step 4: Mark classification AFTER entity is created (client polls for this)
+    await queryOne(
+      `UPDATE captures SET classification = $1 WHERE id = $2`,
+      [classification.type, captureId]
+    );
 
     console.log(`[${captureId}] Processing complete`);
   } catch (error) {

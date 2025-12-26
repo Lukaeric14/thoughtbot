@@ -14,19 +14,19 @@ interface MatchResult {
 
 /**
  * Use OpenAI to find a semantically matching active task
+ * Checks ALL active tasks regardless of category to prevent duplicates
  */
 export async function findSemanticTaskMatch(
   newTitle: string,
   category: Category
 ): Promise<Task | null> {
-  // Get active tasks in this category
+  // Get active tasks across ALL categories to catch duplicates
   const activeTasks = await query<Task>(
     `SELECT * FROM tasks
      WHERE status = 'open'
-     AND category = $1
      ORDER BY mention_count DESC, created_at DESC
-     LIMIT 20`,
-    [category]
+     LIMIT 30`,
+    []
   );
 
   if (activeTasks.length === 0) {
@@ -88,18 +88,18 @@ Only match if confidence >= 0.7. If unsure, return null.`,
 
 /**
  * Use OpenAI to find a semantically matching active thought
+ * Checks ALL thoughts regardless of category to prevent duplicates
  */
 export async function findSemanticThoughtMatch(
   newText: string,
   category: Category
 ): Promise<Thought | null> {
-  // Get recent active thoughts in this category
+  // Get recent thoughts across ALL categories to catch duplicates
   const activeThoughts = await query<Thought>(
     `SELECT * FROM thoughts
-     WHERE category = $1
      ORDER BY mention_count DESC, created_at DESC
-     LIMIT 20`,
-    [category]
+     LIMIT 30`,
+    []
   );
 
   if (activeThoughts.length === 0) {

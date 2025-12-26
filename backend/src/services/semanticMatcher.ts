@@ -1,11 +1,6 @@
-import OpenAI from 'openai';
-import { config } from '../config.js';
+import { openai } from './openaiClient.js';
 import { query } from '../db/client.js';
 import type { Task, Thought, Category } from '../types/index.js';
-
-const openai = new OpenAI({
-  apiKey: config.openaiApiKey,
-});
 
 interface MatchResult {
   matched_id: string | null;

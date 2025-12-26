@@ -1,10 +1,5 @@
-import OpenAI from 'openai';
-import { config } from '../config.js';
+import { openai } from './openaiClient.js';
 import type { ClassificationResult } from '../types/index.js';
-
-const openai = new OpenAI({
-  apiKey: config.openaiApiKey,
-});
 
 function getTodayDate(): string {
   return new Date().toISOString().split('T')[0];

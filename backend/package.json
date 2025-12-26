@@ -15,6 +15,7 @@
     "db:set-tasks-business": "tsx src/db/set-tasks-business.ts"
   },
   "dependencies": {
+    "braintrust": "^1.1.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",

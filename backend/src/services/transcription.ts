@@ -1,10 +1,5 @@
-import OpenAI from 'openai';
 import fs from 'fs';
-import { config } from '../config.js';
-
-const openai = new OpenAI({
-  apiKey: config.openaiApiKey,
-});
+import { openai } from './openaiClient.js';
 
 export async function transcribeAudio(audioFilePath: string): Promise<string> {
   const audioFile = fs.createReadStream(audioFilePath);

@@ -8,8 +8,9 @@ const openai = new OpenAI({
 });
 
 interface MatchResult {
-  matchedId: string | null;
+  matched_id: string | null;
   confidence: number;
+  reason?: string;
 }
 
 /**
@@ -73,14 +74,20 @@ Only match if confidence >= 0.7. If unsure, return null.`,
   }
 
   try {
-    const result = JSON.parse(content) as MatchResult & { reason?: string };
+    const result = JSON.parse(content) as MatchResult;
+    console.log(`Semantic matcher response for "${newTitle}":`, result);
 
-    if (result.matchedId && result.confidence >= 0.7) {
-      console.log(`Semantic match found: "${newTitle}" matches task ${result.matchedId} (confidence: ${result.confidence}, reason: ${result.reason})`);
-      return activeTasks.find(t => t.id === result.matchedId) || null;
+    if (result.matched_id && result.confidence >= 0.5) {
+      const matchedTask = activeTasks.find(t => t.id === result.matched_id);
+      if (matchedTask) {
+        console.log(`Semantic match found: "${newTitle}" matches "${matchedTask.title}" (confidence: ${result.confidence}, reason: ${result.reason})`);
+        return matchedTask;
+      }
+    } else {
+      console.log(`No semantic match for "${newTitle}" (confidence: ${result.confidence})`);
     }
   } catch (error) {
-    console.error('Error parsing semantic match result:', error);
+    console.error('Error parsing semantic match result:', error, 'content:', content);
   }
 
   return null;
@@ -146,14 +153,20 @@ Only match if confidence >= 0.7. If unsure, return null.`,
   }
 
   try {
-    const result = JSON.parse(content) as MatchResult & { reason?: string };
+    const result = JSON.parse(content) as MatchResult;
+    console.log(`Semantic matcher response for "${newText}":`, result);
 
-    if (result.matchedId && result.confidence >= 0.7) {
-      console.log(`Semantic match found: "${newText}" matches thought ${result.matchedId} (confidence: ${result.confidence}, reason: ${result.reason})`);
-      return activeThoughts.find(t => t.id === result.matchedId) || null;
+    if (result.matched_id && result.confidence >= 0.5) {
+      const matchedThought = activeThoughts.find(t => t.id === result.matched_id);
+      if (matchedThought) {
+        console.log(`Semantic match found: "${newText}" matches "${matchedThought.text}" (confidence: ${result.confidence}, reason: ${result.reason})`);
+        return matchedThought;
+      }
+    } else {
+      console.log(`No semantic match for "${newText}" (confidence: ${result.confidence})`);
     }
   } catch (error) {
-    console.error('Error parsing semantic match result:', error);
+    console.error('Error parsing semantic match result:', error, 'content:', content);
   }
 
   return null;

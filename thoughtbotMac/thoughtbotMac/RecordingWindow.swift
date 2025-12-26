@@ -33,6 +33,7 @@ class TrackingView: NSView {
     }
 }
 
+@MainActor
 class RecordingWindow: NSObject {
     private var window: NSWindow?
     private var recorder: MacAudioRecorder?
@@ -392,6 +393,7 @@ struct TaskItem: Codable, Identifiable {
 }
 
 // MARK: - View Model
+@MainActor
 class WidgetViewModel: ObservableObject {
     @Published var widgetState: WidgetState = .idle
     @Published var isHovering = false

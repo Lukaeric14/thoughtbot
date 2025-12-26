@@ -66,7 +66,15 @@ function ThoughtCard({ thought }: { thought: Thought }) {
     <Card>
       <CardContent className="pt-6">
         <div className="space-y-3">
-          <p className="font-semibold text-lg">{thought.text}</p>
+          <div className="flex items-center gap-2">
+            <p className="font-semibold text-lg">{thought.text}</p>
+            {/* Mention count badge (only show if > 1) */}
+            {thought.mention_count && thought.mention_count > 1 && (
+              <span className="inline-flex items-center px-2 py-0.5 text-xs font-bold text-white bg-primary rounded-full">
+                x{thought.mention_count}
+              </span>
+            )}
+          </div>
 
           {thought.audio_url && (
             <AudioPlayer audioUrl={thought.audio_url} />

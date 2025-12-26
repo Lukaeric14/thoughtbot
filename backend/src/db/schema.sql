@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS thoughts (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   text TEXT NOT NULL,
   canonical_text TEXT,
+  mention_count INT DEFAULT 1,
   capture_id UUID REFERENCES captures(id) ON DELETE SET NULL
 );
 
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   canonical_title TEXT,
   due_date DATE NOT NULL,
   status VARCHAR(20) DEFAULT 'open',
+  mention_count INT DEFAULT 1,
   last_updated_at TIMESTAMPTZ DEFAULT NOW(),
   capture_id UUID REFERENCES captures(id) ON DELETE SET NULL
 );

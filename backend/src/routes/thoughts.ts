@@ -27,7 +27,8 @@ router.get('/', async (req, res) => {
       params.push(category);
     }
 
-    sql += ` ORDER BY t.created_at DESC`;
+    // Sort by mention_count DESC (most mentioned first), then by created_at DESC
+    sql += ` ORDER BY t.mention_count DESC, t.created_at DESC`;
 
     const thoughts = await query<ThoughtWithTranscript>(sql, params);
     res.json(thoughts);

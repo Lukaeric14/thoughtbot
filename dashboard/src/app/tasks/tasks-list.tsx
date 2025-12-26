@@ -76,12 +76,20 @@ function TaskCard({ task, onStatusChange }: { task: Task; onStatusChange: (task:
             className="mt-1"
           />
           <div className="flex-1 space-y-3">
-            <p className={cn(
-              "font-semibold text-lg",
-              isDone && "line-through text-muted-foreground"
-            )}>
-              {task.title}
-            </p>
+            <div className="flex items-center gap-2">
+              <p className={cn(
+                "font-semibold text-lg",
+                isDone && "line-through text-muted-foreground"
+              )}>
+                {task.title}
+              </p>
+              {/* Mention count badge (only show if > 1) */}
+              {task.mention_count && task.mention_count > 1 && (
+                <span className="inline-flex items-center px-2 py-0.5 text-xs font-bold text-white bg-primary rounded-full">
+                  x{task.mention_count}
+                </span>
+              )}
+            </div>
 
             {hasTranscript && (
               <Collapsible open={isOpen} onOpenChange={setIsOpen}>

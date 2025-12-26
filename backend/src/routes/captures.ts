@@ -70,15 +70,15 @@ async function processCapture(captureId: string, audioPath: string): Promise<voi
     switch (classification.type) {
       case 'thought':
         if (classification.thought) {
-          const thought = await createThought(classification.thought, captureId, category);
-          console.log(`[${captureId}] Created thought: ${thought.id} (${category})`);
+          const { thought, isDuplicate } = await createThought(classification.thought, captureId, category);
+          console.log(`[${captureId}] ${isDuplicate ? `Mention count incremented (${thought.mention_count})` : 'Created thought'}: ${thought.id} (${category})`);
         }
         break;
 
       case 'task_create':
         if (classification.task_create) {
           const { task, isDuplicate } = await createTask(classification.task_create, captureId, category);
-          console.log(`[${captureId}] ${isDuplicate ? 'Duplicate found' : 'Created task'}: ${task.id} - "${task.title}" (${category})`);
+          console.log(`[${captureId}] ${isDuplicate ? `Mention count incremented (${task.mention_count})` : 'Created task'}: ${task.id} - "${task.title}" (${category})`);
         }
         break;
 

@@ -349,6 +349,7 @@ struct ThoughtItem: Codable, Identifiable {
     let created_at: String
     let text: String
     let canonical_text: String?
+    let mention_count: Int?
     let capture_id: String?
     let transcript: String?
 }
@@ -360,6 +361,7 @@ struct TaskItem: Codable, Identifiable {
     let canonical_title: String?
     let due_date: String
     let status: String
+    let mention_count: Int?
     let last_updated_at: String
     let capture_id: String?
     let transcript: String?
@@ -630,10 +632,23 @@ struct ThoughtRow: View {
     var body: some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(thought.text)
-                    .font(.system(size: 12))
-                    .foregroundColor(.white)
-                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    Text(thought.text)
+                        .font(.system(size: 12))
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+
+                    // Mention count badge (only show if > 1)
+                    if let count = thought.mention_count, count > 1 {
+                        Text("x\(count)")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.accentColor)
+                            .clipShape(Capsule())
+                    }
+                }
 
                 Text(formatRelativeTime(thought.created_at))
                     .font(.system(size: 10))
@@ -707,10 +722,23 @@ struct TaskRow: View {
                 .frame(width: 16, height: 16)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(task.title)
-                    .font(.system(size: 12))
-                    .foregroundColor(.white)
-                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    Text(task.title)
+                        .font(.system(size: 12))
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+
+                    // Mention count badge (only show if > 1)
+                    if let count = task.mention_count, count > 1 {
+                        Text("x\(count)")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.accentColor)
+                            .clipShape(Capsule())
+                    }
+                }
 
                 Text(formatDueDate(task.due_date))
                     .font(.system(size: 10))

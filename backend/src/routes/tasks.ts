@@ -37,7 +37,8 @@ router.get('/', async (req, res) => {
       sql += ` WHERE ${conditions.join(' AND ')}`;
     }
 
-    sql += ` ORDER BY t.created_at DESC`;
+    // Sort by mention_count DESC (most mentioned first), then by created_at DESC
+    sql += ` ORDER BY t.mention_count DESC, t.created_at DESC`;
 
     console.log('Tasks query:', sql, 'params:', params);
     const tasks = await query<TaskWithTranscript>(sql, params);

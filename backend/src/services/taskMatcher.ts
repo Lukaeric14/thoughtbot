@@ -1,5 +1,6 @@
 import { query, queryOne } from '../db/client.js';
 import { normalizeText, findDuplicateTask, findMatchingTask } from './deduplication.js';
+import { findSemanticTaskMatch, findSemanticThoughtMatch } from './semanticMatcher.js';
 import type { Task, Thought, TaskCreatePayload, TaskUpdatePayload, ThoughtPayload, Category } from '../types/index.js';
 
 function getTodayDate(): string {
@@ -10,12 +11,32 @@ export async function createThought(
   payload: ThoughtPayload,
   captureId: string,
   category: Category = 'personal'
-): Promise<Thought> {
+): Promise<{ thought: Thought; isDuplicate: boolean }> {
   const canonicalText = normalizeText(payload.text);
 
+  // Check for semantic match using AI
+  const existingThought = await findSemanticThoughtMatch(payload.text, category);
+
+  if (existingThought) {
+    // Increment mention count on existing thought
+    const updated = await queryOne<Thought>(
+      `UPDATE thoughts
+       SET mention_count = mention_count + 1
+       WHERE id = $1
+       RETURNING *`,
+      [existingThought.id]
+    );
+
+    if (updated) {
+      console.log(`Mention count incremented for thought "${existingThought.text}" -> ${updated.mention_count}`);
+      return { thought: updated, isDuplicate: true };
+    }
+  }
+
+  // Create new thought
   const result = await queryOne<Thought>(
-    `INSERT INTO thoughts (text, canonical_text, category, capture_id)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO thoughts (text, canonical_text, category, capture_id, mention_count)
+     VALUES ($1, $2, $3, $4, 1)
      RETURNING *`,
     [payload.text, canonicalText, category, captureId]
   );
@@ -24,7 +45,7 @@ export async function createThought(
     throw new Error('Failed to create thought');
   }
 
-  return result;
+  return { thought: result, isDuplicate: false };
 }
 
 export async function createTask(
@@ -35,16 +56,29 @@ export async function createTask(
   const canonicalTitle = normalizeText(payload.title);
   const dueDate = payload.due_date || getTodayDate();
 
-  // Check for duplicates
-  const existingTask = await findDuplicateTask(canonicalTitle, 0.85);
+  // Check for semantic match using AI (replaces trigram-based duplicate check)
+  const existingTask = await findSemanticTaskMatch(payload.title, category);
+
   if (existingTask) {
-    console.log(`Duplicate detected: "${payload.title}" matches "${existingTask.title}"`);
-    return { task: existingTask, isDuplicate: true };
+    // Increment mention count on existing task
+    const updated = await queryOne<Task>(
+      `UPDATE tasks
+       SET mention_count = mention_count + 1, last_updated_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [existingTask.id]
+    );
+
+    if (updated) {
+      console.log(`Mention count incremented for task "${existingTask.title}" -> ${updated.mention_count}`);
+      return { task: updated, isDuplicate: true };
+    }
   }
 
+  // Create new task
   const result = await queryOne<Task>(
-    `INSERT INTO tasks (title, canonical_title, due_date, status, category, capture_id)
-     VALUES ($1, $2, $3, 'open', $4, $5)
+    `INSERT INTO tasks (title, canonical_title, due_date, status, category, capture_id, mention_count)
+     VALUES ($1, $2, $3, 'open', $4, $5, 1)
      RETURNING *`,
     [payload.title, canonicalTitle, dueDate, category, captureId]
   );

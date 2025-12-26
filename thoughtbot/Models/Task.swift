@@ -13,6 +13,8 @@ struct TaskItem: Codable, Identifiable {
     let canonicalTitle: String?
     let dueDate: Date
     var status: TaskStatus
+    let category: Category?
+    let mentionCount: Int?
     let lastUpdatedAt: Date
     let captureId: String?
     let transcript: String?
@@ -24,6 +26,8 @@ struct TaskItem: Codable, Identifiable {
         case canonicalTitle = "canonical_title"
         case dueDate = "due_date"
         case status
+        case category
+        case mentionCount = "mention_count"
         case lastUpdatedAt = "last_updated_at"
         case captureId = "capture_id"
         case transcript

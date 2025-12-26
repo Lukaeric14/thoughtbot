@@ -1,10 +1,15 @@
 import SwiftUI
+import Combine
 
 struct TasksListView: View {
+    @Binding var selectedCategory: Category
     @State private var tasks: [TaskItem] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showRecorder = false
+    @State private var highlightedId: String?
+    @State private var scrollToId: String?
+    @StateObject private var captureQueue = CaptureQueue.shared
 
     var body: some View {
         NavigationStack {
@@ -35,16 +40,39 @@ struct TasksListView: View {
                             .foregroundColor(.secondary)
                     }
                 } else {
-                    List {
-                        ForEach(tasks) { task in
-                            TaskRow(task: task, onStatusChange: { newStatus in
-                                await updateTaskStatus(taskId: task.id, status: newStatus)
-                            })
+                    ScrollViewReader { proxy in
+                        List {
+                            ForEach(tasks) { task in
+                                TaskRow(task: task, isHighlighted: highlightedId == task.id, onStatusChange: { newStatus in
+                                    await updateTaskStatus(taskId: task.id, status: newStatus)
+                                })
+                                .id(task.id)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button(role: .destructive) {
+                                        Task {
+                                            await deleteTask(id: task.id)
+                                        }
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
+                            }
                         }
-                    }
-                    .listStyle(.plain)
-                    .refreshable {
-                        await loadTasks()
+                        .listStyle(.plain)
+                        .refreshable {
+                            await loadTasks()
+                        }
+                        .onChange(of: scrollToId) { _, newId in
+                            if let id = newId {
+                                withAnimation {
+                                    proxy.scrollTo(id, anchor: .top)
+                                }
+                                // Clear after scrolling
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                    scrollToId = nil
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -68,6 +96,32 @@ struct TasksListView: View {
                 }
             }
             .navigationTitle("Tasks")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: {
+                        selectedCategory = selectedCategory == .personal ? .business : .personal
+                        Task { await loadTasks() }
+                    }) {
+                        Image(systemName: selectedCategory == .personal ? "house.fill" : "building.2.fill")
+                            .foregroundColor(.secondary)
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    ProcessingIndicator {
+                        // Navigate to most recent task
+                        if let firstTask = tasks.first {
+                            scrollToId = firstTask.id
+                            highlightedId = firstTask.id
+                            // Clear highlight after delay
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                withAnimation {
+                                    highlightedId = nil
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             .sheet(isPresented: $showRecorder) {
                 CaptureView()
                     .presentationDetents([.medium])
@@ -82,6 +136,25 @@ struct TasksListView: View {
         .task {
             await loadTasks()
         }
+        .onReceive(captureQueue.captureCompleted) { _ in
+            // Auto-refresh when a capture is processed
+            Task {
+                // Small delay to ensure backend has finished processing
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                await loadTasks()
+
+                // Highlight the newest task
+                if let firstTask = tasks.first {
+                    scrollToId = firstTask.id
+                    highlightedId = firstTask.id
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        withAnimation {
+                            highlightedId = nil
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private func loadTasks() async {
@@ -89,7 +162,7 @@ struct TasksListView: View {
         errorMessage = nil
 
         do {
-            tasks = try await APIClient.shared.fetchTasks()
+            tasks = try await APIClient.shared.fetchTasks(category: selectedCategory)
         } catch {
             errorMessage = "Failed to load tasks"
             print("Error loading tasks: \(error)")
@@ -110,10 +183,25 @@ struct TasksListView: View {
             await loadTasks()
         }
     }
+
+    private func deleteTask(id: String) async {
+        do {
+            try await APIClient.shared.deleteTask(id: id)
+            // Remove from local list with animation
+            withAnimation {
+                tasks.removeAll { $0.id == id }
+            }
+        } catch {
+            print("Error deleting task: \(error)")
+            // Reload to get fresh state
+            await loadTasks()
+        }
+    }
 }
 
 struct TaskRow: View {
     let task: TaskItem
+    var isHighlighted: Bool = false
     let onStatusChange: (TaskStatus) async -> Void
 
     @State private var isExpanded = false
@@ -151,12 +239,26 @@ struct TaskRow: View {
 
             // Content
             VStack(alignment: .leading, spacing: 8) {
-                // Main title (embossed/bold, strikethrough if done)
-                Text(task.title)
-                    .font(.body)
-                    .fontWeight(.semibold)
-                    .strikethrough(isDone)
-                    .foregroundColor(isDone ? .secondary : .primary)
+                // Main title with mention count badge
+                HStack(spacing: 6) {
+                    Text(task.title)
+                        .font(.body)
+                        .fontWeight(.semibold)
+                        .strikethrough(isDone)
+                        .foregroundColor(isDone ? .secondary : .primary)
+
+                    // Mention count badge (only show if > 1)
+                    if let count = task.mentionCount, count > 1 {
+                        Text("x\(count)")
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.accentColor)
+                            .clipShape(Capsule())
+                    }
+                }
 
                 // Collapsible transcript
                 if let transcript = task.transcript, !transcript.isEmpty, transcript != task.title {
@@ -197,6 +299,12 @@ struct TaskRow: View {
             Spacer()
         }
         .padding(.vertical, 4)
+        .padding(.horizontal, isHighlighted ? 8 : 0)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isHighlighted ? Color.accentColor.opacity(0.15) : Color.clear)
+        )
+        .animation(.easeInOut(duration: 0.3), value: isHighlighted)
         .opacity(isDone ? 0.6 : 1.0)
     }
 
@@ -224,5 +332,5 @@ struct TaskRow: View {
 }
 
 #Preview {
-    TasksListView()
+    TasksListView(selectedCategory: .constant(.personal))
 }

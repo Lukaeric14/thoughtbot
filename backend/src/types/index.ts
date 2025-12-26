@@ -41,6 +41,7 @@ export interface Thought {
   text: string;
   canonical_text: string | null;
   category: Category;
+  mention_count: number;
   capture_id: string | null;
 }
 
@@ -52,6 +53,7 @@ export interface Task {
   due_date: Date;
   status: TaskStatus;
   category: Category;
+  mention_count: number;
   last_updated_at: Date;
   capture_id: string | null;
 }

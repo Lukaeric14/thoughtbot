@@ -5,6 +5,28 @@ struct CaptureResponse: Codable {
     let status: String
 }
 
+struct CaptureStatus: Codable {
+    let id: String
+    let classification: String?
+}
+
+enum CaptureResult {
+    case thought
+    case task
+    case unknown
+
+    init(from classification: String?) {
+        switch classification {
+        case "thought":
+            self = .thought
+        case "task_create", "task_update":
+            self = .task
+        default:
+            self = .unknown
+        }
+    }
+}
+
 struct QueuedCapture: Codable, Identifiable {
     let id: UUID
     let audioURL: URL

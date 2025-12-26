@@ -1,9 +1,11 @@
 import SwiftUI
+import Combine
 
 struct MainTabView: View {
     @State private var selectedTab = 0
     @AppStorage("selectedCategory") private var selectedCategoryRaw: String = Category.personal.rawValue
     @ObservedObject private var recordingManager = RecordingManager.shared
+    @ObservedObject private var captureQueue = CaptureQueue.shared
 
     private var selectedCategory: Binding<Category> {
         Binding(
@@ -40,6 +42,19 @@ struct MainTabView: View {
         .task {
             // Prefetch all data on app launch for instant category switching
             await DataStore.shared.prefetchAll()
+        }
+        .onReceive(captureQueue.captureCompleted) { result in
+            // Auto-navigate to the correct tab based on capture result
+            withAnimation {
+                switch result {
+                case .thought:
+                    selectedTab = 0
+                case .task:
+                    selectedTab = 1
+                case .unknown:
+                    break  // Stay on current tab
+                }
+            }
         }
     }
 }

@@ -9,8 +9,8 @@ class CaptureQueue: ObservableObject {
     @Published private(set) var queuedCount: Int = 0
     @Published private(set) var isProcessing: Bool = false
 
-    // Publisher that fires when a capture is successfully processed
-    let captureCompleted = PassthroughSubject<Void, Never>()
+    // Publisher that fires when a capture is successfully processed with result type
+    let captureCompleted = PassthroughSubject<CaptureResult, Never>()
 
     private var queue: [QueuedCapture] = []
     private let queueKey = "CaptureQueue"
@@ -42,7 +42,7 @@ class CaptureQueue: ObservableObject {
             var capture = queue[0]
 
             do {
-                _ = try await APIClient.shared.uploadCapture(audioURL: capture.audioURL)
+                let response = try await APIClient.shared.uploadCapture(audioURL: capture.audioURL)
 
                 // Success - remove from queue and delete audio file
                 queue.removeFirst()
@@ -51,8 +51,11 @@ class CaptureQueue: ObservableObject {
 
                 try? FileManager.default.removeItem(at: capture.audioURL)
 
-                // Notify that a capture was successfully processed
-                captureCompleted.send()
+                // Poll for capture classification (max 30s)
+                let result = await pollForClassification(captureId: response.id)
+
+                // Notify that a capture was successfully processed with result type
+                captureCompleted.send(result)
 
             } catch {
                 capture.retryCount += 1
@@ -75,6 +78,27 @@ class CaptureQueue: ObservableObject {
         }
 
         isProcessing = false
+    }
+
+    private func pollForClassification(captureId: String) async -> CaptureResult {
+        let maxAttempts = 60  // 30 seconds at 500ms intervals
+        let pollInterval: UInt64 = 500_000_000  // 500ms in nanoseconds
+
+        for _ in 0..<maxAttempts {
+            do {
+                let status = try await APIClient.shared.fetchCaptureStatus(id: captureId)
+                if let classification = status.classification {
+                    return CaptureResult(from: classification)
+                }
+            } catch {
+                // Continue polling on error
+            }
+
+            try? await Task.sleep(nanoseconds: pollInterval)
+        }
+
+        // Timeout - return unknown
+        return .unknown
     }
 
     private func startNetworkMonitoring() {

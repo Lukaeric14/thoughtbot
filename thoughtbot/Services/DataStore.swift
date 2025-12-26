@@ -27,7 +27,7 @@ class DataStore: ObservableObject {
     private init() {
         // Listen for capture completions to refresh data
         CaptureQueue.shared.captureCompleted
-            .debounce(for: .seconds(1.5), scheduler: DispatchQueue.main)
+            .debounce(for: .seconds(0.5), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
                 Task {
                     await self?.forceRefreshAll()

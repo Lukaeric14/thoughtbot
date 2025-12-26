@@ -46,6 +46,26 @@ actor APIClient {
 
     // MARK: - Captures
 
+    func fetchCaptureStatus(id: String) async throws -> CaptureStatus {
+        let url = Config.capturesURL.appendingPathComponent(id)
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 10
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.serverError(httpResponse.statusCode)
+        }
+
+        return try JSONDecoder().decode(CaptureStatus.self, from: data)
+    }
+
     func uploadCapture(audioURL: URL) async throws -> CaptureResponse {
         let boundary = UUID().uuidString
 

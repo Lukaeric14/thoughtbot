@@ -13,6 +13,28 @@ struct MacCaptureResponse: Codable {
     let status: String
 }
 
+struct MacCaptureStatus: Codable {
+    let id: String
+    let classification: String?
+}
+
+enum MacCaptureResult {
+    case thought
+    case task
+    case unknown
+
+    init(from classification: String?) {
+        switch classification {
+        case "thought":
+            self = .thought
+        case "task_create", "task_update":
+            self = .task
+        default:
+            self = .unknown
+        }
+    }
+}
+
 actor MacAPIClient {
     static let shared = MacAPIClient()
 
@@ -77,6 +99,27 @@ actor MacAPIClient {
         } catch {
             throw MacAPIError.decodingError(error)
         }
+    }
+
+    // MARK: - Fetch Capture Status
+    func fetchCaptureStatus(id: String) async throws -> MacCaptureStatus {
+        let url = URL(string: "\(baseURL)/api/captures/\(id)")!
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 10
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw MacAPIError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw MacAPIError.serverError(httpResponse.statusCode)
+        }
+
+        return try JSONDecoder().decode(MacCaptureStatus.self, from: data)
     }
 
     // MARK: - Upload Capture

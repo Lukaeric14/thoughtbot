@@ -246,18 +246,14 @@ class RecordingWindow: NSObject {
         viewModel.widgetState = .processing
         viewModel.processingCount += 1
 
-        // Remember current thought count to detect new one
-        let previousThoughtCount = viewModel.thoughts.count
-        let previousTaskCount = viewModel.tasks.count
-
         if let audioURL = recorder.stopRecording() {
             Task {
                 do {
-                    _ = try await MacAPIClient.shared.uploadCapture(audioURL: audioURL)
+                    let response = try await MacAPIClient.shared.uploadCapture(audioURL: audioURL)
                     try? FileManager.default.removeItem(at: audioURL)
 
-                    // Poll until new data appears (backend finished processing)
-                    await self.waitForNewCapture(previousThoughtCount: previousThoughtCount, previousTaskCount: previousTaskCount)
+                    // Poll for classification, then fetch data and navigate
+                    await self.waitForCaptureAndNavigate(captureId: response.id)
 
                 } catch {
                     print("Upload error: \(error)")
@@ -275,10 +271,27 @@ class RecordingWindow: NSObject {
         }
     }
 
-    private func waitForNewCapture(previousThoughtCount: Int, previousTaskCount: Int) async {
-        // Wait 2 seconds for backend to process, then fetch once
-        try? await Task.sleep(nanoseconds: 2_000_000_000)
+    private func waitForCaptureAndNavigate(captureId: String) async {
+        // Poll for classification (max 30 seconds at 500ms intervals)
+        let maxAttempts = 60
+        let pollInterval: UInt64 = 500_000_000  // 500ms
 
+        var captureResult: MacCaptureResult = .unknown
+
+        for _ in 0..<maxAttempts {
+            do {
+                let status = try await MacAPIClient.shared.fetchCaptureStatus(id: captureId)
+                if let classification = status.classification {
+                    captureResult = MacCaptureResult(from: classification)
+                    break
+                }
+            } catch {
+                // Continue polling on error
+            }
+            try? await Task.sleep(nanoseconds: pollInterval)
+        }
+
+        // Fetch fresh data
         do {
             let category = viewModel.selectedCategory
             let thoughts = try await MacAPIClient.shared.fetchThoughts(category: category)
@@ -290,20 +303,40 @@ class RecordingWindow: NSObject {
                 self.viewModel.widgetState = .idle
                 self.positionWindow(state: .idle, animate: true)
 
-                // Highlight the new item if count increased
-                if thoughts.count > previousThoughtCount, let newThought = thoughts.first {
-                    self.viewModel.highlightedThoughtId = newThought.id
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                        withAnimation {
-                            self.viewModel.highlightedThoughtId = nil
+                // Navigate to correct tab and highlight new item
+                switch captureResult {
+                case .thought:
+                    withAnimation {
+                        self.viewModel.selectedTab = 0
+                    }
+                    if let newThought = thoughts.first {
+                        self.viewModel.highlightedThoughtId = newThought.id
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                            withAnimation {
+                                self.viewModel.highlightedThoughtId = nil
+                            }
                         }
                     }
-                }
-                if tasks.count > previousTaskCount, let newTask = tasks.first {
-                    self.viewModel.highlightedTaskId = newTask.id
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                        withAnimation {
-                            self.viewModel.highlightedTaskId = nil
+                case .task:
+                    withAnimation {
+                        self.viewModel.selectedTab = 1
+                    }
+                    if let newTask = tasks.first {
+                        self.viewModel.highlightedTaskId = newTask.id
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                            withAnimation {
+                                self.viewModel.highlightedTaskId = nil
+                            }
+                        }
+                    }
+                case .unknown:
+                    // Stay on current tab, highlight newest item in either list
+                    if let newThought = thoughts.first {
+                        self.viewModel.highlightedThoughtId = newThought.id
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                            withAnimation {
+                                self.viewModel.highlightedThoughtId = nil
+                            }
                         }
                     }
                 }
@@ -500,6 +533,11 @@ struct ExpandedView: View {
                 }
 
                 Spacer()
+
+                // Processing indicator in expanded view
+                if viewModel.isProcessing {
+                    ExpandedProcessingIndicator()
+                }
             }
             .padding(.horizontal, 12)
             .padding(.top, 12)
@@ -905,6 +943,30 @@ struct ProcessingDot: View {
             .onAppear {
                 opacity = 1.0
             }
+    }
+}
+
+// MARK: - Expanded Processing Indicator
+struct ExpandedProcessingIndicator: View {
+    @State private var rotation: Double = 0
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.white.opacity(0.1))
+                .frame(width: 28, height: 28)
+
+            Circle()
+                .trim(from: 0, to: 0.7)
+                .stroke(Color.accentColor, lineWidth: 2)
+                .frame(width: 16, height: 16)
+                .rotationEffect(.degrees(rotation))
+                .onAppear {
+                    withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
+                        rotation = 360
+                    }
+                }
+        }
     }
 }
 

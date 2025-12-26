@@ -273,21 +273,24 @@ class RecordingWindow: NSObject {
     }
 
     private func waitForCaptureAndNavigate(captureId: String) async {
+        print("Polling for capture: \(captureId), isProcessing: \(viewModel.isProcessing)")
+
         // Poll for classification (max 30 seconds at 500ms intervals)
         let maxAttempts = 60
         let pollInterval: UInt64 = 500_000_000  // 500ms
 
         var captureResult: MacCaptureResult = .unknown
 
-        for _ in 0..<maxAttempts {
+        for attempt in 0..<maxAttempts {
             do {
                 let status = try await MacAPIClient.shared.fetchCaptureStatus(id: captureId)
                 if let classification = status.classification {
+                    print("Classification found after \(attempt) attempts: \(classification)")
                     captureResult = MacCaptureResult(from: classification)
                     break
                 }
             } catch {
-                // Continue polling on error
+                print("Poll error: \(error)")
             }
             try? await Task.sleep(nanoseconds: pollInterval)
         }
@@ -298,57 +301,57 @@ class RecordingWindow: NSObject {
             let thoughts = try await MacAPIClient.shared.fetchThoughts(category: category)
             let tasks = try await MacAPIClient.shared.fetchTasks(category: category)
 
-            await MainActor.run {
-                self.viewModel.updateDataAfterCapture(thoughts: thoughts, tasks: tasks)
-                self.viewModel.processingCount = max(0, self.viewModel.processingCount - 1)
-                self.viewModel.widgetState = .idle
-                self.positionWindow(state: .idle, animate: true)
+            print("Fetched \(thoughts.count) thoughts, \(tasks.count) tasks. Result: \(captureResult)")
 
-                // Navigate to correct tab and highlight new item
-                switch captureResult {
-                case .thought:
-                    withAnimation {
-                        self.viewModel.selectedTab = 0
-                    }
-                    if let newThought = thoughts.first {
-                        self.viewModel.highlightedThoughtId = newThought.id
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                            withAnimation {
-                                self.viewModel.highlightedThoughtId = nil
-                            }
+            viewModel.updateDataAfterCapture(thoughts: thoughts, tasks: tasks)
+            viewModel.processingCount = max(0, viewModel.processingCount - 1)
+            viewModel.widgetState = .idle
+            positionWindow(state: .idle, animate: true)
+
+            // Navigate to correct tab and highlight new item
+            switch captureResult {
+            case .thought:
+                withAnimation {
+                    viewModel.selectedTab = 0
+                }
+                if let newThought = thoughts.first {
+                    print("Highlighting thought: \(newThought.id)")
+                    viewModel.highlightedThoughtId = newThought.id
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        withAnimation {
+                            self.viewModel.highlightedThoughtId = nil
                         }
                     }
-                case .task:
-                    withAnimation {
-                        self.viewModel.selectedTab = 1
-                    }
-                    if let newTask = tasks.first {
-                        self.viewModel.highlightedTaskId = newTask.id
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                            withAnimation {
-                                self.viewModel.highlightedTaskId = nil
-                            }
+                }
+            case .task:
+                withAnimation {
+                    viewModel.selectedTab = 1
+                }
+                if let newTask = tasks.first {
+                    print("Highlighting task: \(newTask.id) - \(newTask.title)")
+                    viewModel.highlightedTaskId = newTask.id
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        withAnimation {
+                            self.viewModel.highlightedTaskId = nil
                         }
                     }
-                case .unknown:
-                    // Stay on current tab, highlight newest item in either list
-                    if let newThought = thoughts.first {
-                        self.viewModel.highlightedThoughtId = newThought.id
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                            withAnimation {
-                                self.viewModel.highlightedThoughtId = nil
-                            }
+                }
+            case .unknown:
+                print("Unknown classification, highlighting first thought if any")
+                if let newThought = thoughts.first {
+                    viewModel.highlightedThoughtId = newThought.id
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        withAnimation {
+                            self.viewModel.highlightedThoughtId = nil
                         }
                     }
                 }
             }
         } catch {
             print("Fetch error after capture: \(error)")
-            await MainActor.run {
-                self.viewModel.processingCount = max(0, self.viewModel.processingCount - 1)
-                self.viewModel.widgetState = .idle
-                self.positionWindow(state: .idle, animate: true)
-            }
+            viewModel.processingCount = max(0, viewModel.processingCount - 1)
+            viewModel.widgetState = .idle
+            positionWindow(state: .idle, animate: true)
         }
     }
 

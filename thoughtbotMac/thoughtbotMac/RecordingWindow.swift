@@ -242,15 +242,22 @@ class RecordingWindow: NSObject {
     }
 
     func stopAndSend() {
-        guard let recorder = recorder else { return }
+        guard let recorder = recorder else {
+            print("stopAndSend: no recorder")
+            return
+        }
 
+        print("stopAndSend: setting processing state, processingCount will be \(viewModel.processingCount + 1)")
         viewModel.widgetState = .processing
         viewModel.processingCount += 1
 
         if let audioURL = recorder.stopRecording() {
+            print("stopAndSend: got audio URL, starting upload")
             Task {
                 do {
+                    print("stopAndSend: uploading...")
                     let response = try await MacAPIClient.shared.uploadCapture(audioURL: audioURL)
+                    print("stopAndSend: upload complete, capture ID: \(response.id)")
                     try? FileManager.default.removeItem(at: audioURL)
 
                     // Poll for classification, then fetch data and navigate
@@ -258,14 +265,13 @@ class RecordingWindow: NSObject {
 
                 } catch {
                     print("Upload error: \(error)")
-                    await MainActor.run {
-                        self.viewModel.processingCount = max(0, self.viewModel.processingCount - 1)
-                        self.viewModel.widgetState = .idle
-                        self.positionWindow(state: .idle, animate: true)
-                    }
+                    viewModel.processingCount = max(0, viewModel.processingCount - 1)
+                    viewModel.widgetState = .idle
+                    positionWindow(state: .idle, animate: true)
                 }
             }
         } else {
+            print("stopAndSend: no audio URL from recorder")
             viewModel.processingCount = max(0, viewModel.processingCount - 1)
             viewModel.widgetState = .idle
             positionWindow(state: .idle, animate: true)
@@ -280,13 +286,15 @@ class RecordingWindow: NSObject {
         let pollInterval: UInt64 = 500_000_000  // 500ms
 
         var captureResult: MacCaptureResult = .unknown
+        var captureCategory: String? = nil
 
         for attempt in 0..<maxAttempts {
             do {
                 let status = try await MacAPIClient.shared.fetchCaptureStatus(id: captureId)
                 if let classification = status.classification {
-                    print("Classification found after \(attempt) attempts: \(classification)")
+                    print("Classification found after \(attempt) attempts: \(classification), category: \(status.category ?? "nil")")
                     captureResult = MacCaptureResult(from: classification)
+                    captureCategory = status.category
                     break
                 }
             } catch {
@@ -295,9 +303,15 @@ class RecordingWindow: NSObject {
             try? await Task.sleep(nanoseconds: pollInterval)
         }
 
-        // Fetch fresh data
+        // Switch to the category where the item was created
+        let category = captureCategory ?? viewModel.selectedCategory
+        if category != viewModel.selectedCategory {
+            print("Switching category from \(viewModel.selectedCategory) to \(category)")
+            viewModel.selectedCategory = category
+        }
+
+        // Fetch fresh data for the correct category
         do {
-            let category = viewModel.selectedCategory
             let thoughts = try await MacAPIClient.shared.fetchThoughts(category: category)
             let tasks = try await MacAPIClient.shared.fetchTasks(category: category)
 

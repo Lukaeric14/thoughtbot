@@ -16,6 +16,17 @@ struct MacCaptureResponse: Codable {
 struct MacCaptureStatus: Codable {
     let id: String
     let classification: String?
+    let raw_llm_output: String?
+
+    var category: String? {
+        guard let raw = raw_llm_output,
+              let data = raw.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let category = json["category"] as? String else {
+            return nil
+        }
+        return category
+    }
 }
 
 enum MacCaptureResult {

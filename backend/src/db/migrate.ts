@@ -48,6 +48,11 @@ CREATE INDEX IF NOT EXISTS idx_captures_created ON captures(created_at);
 CREATE INDEX IF NOT EXISTS idx_thoughts_category ON thoughts(category);
 CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks(category);
 
+-- Composite indexes for common query patterns (category filtering + sorting)
+CREATE INDEX IF NOT EXISTS idx_tasks_category_status ON tasks(category, status);
+CREATE INDEX IF NOT EXISTS idx_tasks_category_sort ON tasks(category, mention_count DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_thoughts_category_sort ON thoughts(category, mention_count DESC, created_at DESC);
+
 -- Add category columns if they don't exist (for existing databases)
 DO $$
 BEGIN

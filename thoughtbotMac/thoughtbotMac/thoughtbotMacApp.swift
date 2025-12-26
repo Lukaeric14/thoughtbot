@@ -28,17 +28,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var isShiftHeld = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        print("App launching...")
+
+        // Check accessibility permissions first
+        let isTrusted = AXIsProcessTrusted()
+        print("Accessibility trusted: \(isTrusted)")
+
+        if !isTrusted {
+            print("Requesting accessibility permissions...")
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+            AXIsProcessTrustedWithOptions(options as CFDictionary)
+        }
+
         setupMenuBar()
         setupGlobalHotkey()
 
         // Show status indicator immediately
         popoverWindow = RecordingWindow()
-
-        // Check accessibility permissions
-        if !AXIsProcessTrusted() {
-            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-            AXIsProcessTrustedWithOptions(options as CFDictionary)
-        }
+        print("App launch complete")
     }
 
     private func setupMenuBar() {
@@ -67,6 +74,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
                 guard let refcon = refcon else { return Unmanaged.passRetained(event) }
                 let appDelegate = Unmanaged<AppDelegate>.fromOpaque(refcon).takeUnretainedValue()
+
+                // Handle event tap disabled (e.g., system disabled it)
+                if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                    print("Event tap was disabled, re-enabling...")
+                    CGEvent.tapEnable(tap: appDelegate.eventTap!, enable: true)
+                    return Unmanaged.passRetained(event)
+                }
+
                 return appDelegate.handleFlagsChanged(event: event)
             },
             userInfo: Unmanaged.passUnretained(self).toOpaque()
@@ -75,10 +90,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        print("Event tap created successfully")
         eventTap = tap
         runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
+        print("Event tap enabled")
     }
 
     private func handleFlagsChanged(event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -92,20 +109,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let isRightOptionPressed = keyCode == 61 && flags.contains(.maskAlternate)
         let isRightOptionReleased = keyCode == 61 && !flags.contains(.maskAlternate)
 
+        print("Key event - keyCode: \(keyCode), flags: \(flags.rawValue), rightOptPressed: \(isRightOptionPressed), rightOptReleased: \(isRightOptionReleased), isRecording: \(isRecording)")
+
         if isRightOptionPressed {
             if isShiftHeld {
                 // Shift + Right Option = toggle expanded view
+                print("Toggle expanded view")
                 DispatchQueue.main.async {
                     self.popoverWindow?.toggleExpanded()
                 }
             } else if !isRecording {
                 // Just Right Option = start recording
+                print("Starting recording...")
                 isRecording = true
                 DispatchQueue.main.async {
                     self.showRecordingWindow()
                 }
             }
         } else if isRightOptionReleased && isRecording {
+            print("Stopping recording...")
             isRecording = false
             DispatchQueue.main.async {
                 self.hideRecordingWindow()

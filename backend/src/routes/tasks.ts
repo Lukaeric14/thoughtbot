@@ -10,10 +10,13 @@ interface TaskWithTranscript extends Task {
 }
 
 // GET /api/tasks - List all tasks (optionally filtered by status and category)
+// Supports pagination: ?limit=50&offset=0 (default limit: 100)
 router.get('/', async (req, res) => {
   try {
     const status = req.query.status as TaskStatus | undefined;
     const category = req.query.category as string | undefined;
+    const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
+    const offset = parseInt(req.query.offset as string) || 0;
 
     let sql = `
       SELECT t.*, c.transcript
@@ -40,9 +43,11 @@ router.get('/', async (req, res) => {
     // Sort by mention_count DESC (most mentioned first), then by created_at DESC
     sql += ` ORDER BY t.mention_count DESC, t.created_at DESC`;
 
-    console.log('Tasks query:', sql, 'params:', params);
+    // Add pagination
+    sql += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    params.push(limit, offset);
+
     const tasks = await query<TaskWithTranscript>(sql, params);
-    console.log('Tasks returned:', tasks.length);
     res.json(tasks);
   } catch (error) {
     console.error('Get tasks error:', error);

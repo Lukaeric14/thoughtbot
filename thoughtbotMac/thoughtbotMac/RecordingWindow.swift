@@ -276,54 +276,45 @@ class RecordingWindow: NSObject {
     }
 
     private func waitForNewCapture(previousThoughtCount: Int, previousTaskCount: Int) async {
-        // Poll for up to 30 seconds waiting for backend to process
-        for _ in 0..<30 {
-            do {
-                let thoughts = try await MacAPIClient.shared.fetchThoughts()
-                let tasks = try await MacAPIClient.shared.fetchTasks()
+        // Wait 2 seconds for backend to process, then fetch once
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
 
-                // Check if new data appeared
-                if thoughts.count > previousThoughtCount || tasks.count > previousTaskCount {
-                    await MainActor.run {
-                        self.viewModel.thoughts = thoughts
-                        self.viewModel.tasks = tasks
-                        self.viewModel.processingCount = max(0, self.viewModel.processingCount - 1)
-                        self.viewModel.widgetState = .idle
-                        self.positionWindow(state: .idle, animate: true)
+        do {
+            let category = viewModel.selectedCategory
+            let thoughts = try await MacAPIClient.shared.fetchThoughts(category: category)
+            let tasks = try await MacAPIClient.shared.fetchTasks(category: category)
 
-                        // Highlight the new item
-                        if thoughts.count > previousThoughtCount, let newThought = thoughts.first {
-                            self.viewModel.highlightedThoughtId = newThought.id
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                                withAnimation {
-                                    self.viewModel.highlightedThoughtId = nil
-                                }
-                            }
-                        }
-                        if tasks.count > previousTaskCount, let newTask = tasks.first {
-                            self.viewModel.highlightedTaskId = newTask.id
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                                withAnimation {
-                                    self.viewModel.highlightedTaskId = nil
-                                }
-                            }
+            await MainActor.run {
+                self.viewModel.updateDataAfterCapture(thoughts: thoughts, tasks: tasks)
+                self.viewModel.processingCount = max(0, self.viewModel.processingCount - 1)
+                self.viewModel.widgetState = .idle
+                self.positionWindow(state: .idle, animate: true)
+
+                // Highlight the new item if count increased
+                if thoughts.count > previousThoughtCount, let newThought = thoughts.first {
+                    self.viewModel.highlightedThoughtId = newThought.id
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        withAnimation {
+                            self.viewModel.highlightedThoughtId = nil
                         }
                     }
-                    return
                 }
-            } catch {
-                print("Polling error: \(error)")
+                if tasks.count > previousTaskCount, let newTask = tasks.first {
+                    self.viewModel.highlightedTaskId = newTask.id
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        withAnimation {
+                            self.viewModel.highlightedTaskId = nil
+                        }
+                    }
+                }
             }
-
-            // Wait 1 second before next poll
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-        }
-
-        // Timeout - stop processing anyway
-        await MainActor.run {
-            self.viewModel.processingCount = max(0, self.viewModel.processingCount - 1)
-            self.viewModel.widgetState = .idle
-            self.positionWindow(state: .idle, animate: true)
+        } catch {
+            print("Fetch error after capture: \(error)")
+            await MainActor.run {
+                self.viewModel.processingCount = max(0, self.viewModel.processingCount - 1)
+                self.viewModel.widgetState = .idle
+                self.positionWindow(state: .idle, animate: true)
+            }
         }
     }
 
@@ -372,81 +363,54 @@ class WidgetViewModel: ObservableObject {
     @Published var widgetState: WidgetState = .idle
     @Published var isHovering = false
     @Published var selectedTab = 0
-    @Published var thoughts: [ThoughtItem] = []
-    @Published var tasks: [TaskItem] = []
-    @Published var isLoading = false
     @Published var processingCount = 0
     @Published var highlightedThoughtId: String?
     @Published var highlightedTaskId: String?
-    @Published var selectedCategory: String = "personal" // "personal" or "business"
+
+    // Persisted category
+    @AppStorage("macSelectedCategory") var selectedCategory: String = "personal"
+
+    // Use DataStore for data
+    private let dataStore = MacDataStore.shared
+
+    var thoughts: [ThoughtItem] { dataStore.thoughts(for: selectedCategory) }
+    var tasks: [TaskItem] { dataStore.tasks(for: selectedCategory) }
+    var isLoading: Bool { dataStore.isLoading }
 
     var isRecording: Bool { widgetState == .recording }
     var isSending: Bool { widgetState == .processing }
     var showExpanded: Bool { widgetState == .expanded || isHovering }
     var isProcessing: Bool { processingCount > 0 || widgetState == .processing }
 
+    init() {
+        // Prefetch all data on init
+        Task {
+            await dataStore.prefetchAll()
+        }
+    }
+
     func toggleCategory() {
+        // Instant toggle - data already cached
         selectedCategory = selectedCategory == "personal" ? "business" : "personal"
-        fetchData()
+        // Refresh if cache is stale (async, won't block UI)
+        Task {
+            await dataStore.refreshIfNeeded(for: selectedCategory)
+        }
     }
 
     func fetchData() {
-        guard !isLoading else { return }
-        isLoading = true
-
-        let category = selectedCategory
-        print("Starting data fetch for category: \(category)...")
-
         Task {
-            do {
-                async let fetchedThoughts = MacAPIClient.shared.fetchThoughts(category: category)
-                async let fetchedTasks = MacAPIClient.shared.fetchTasks(category: category)
-
-                let (t, tk) = try await (fetchedThoughts, fetchedTasks)
-
-                print("Fetched \(t.count) thoughts, \(tk.count) tasks")
-
-                await MainActor.run {
-                    self.thoughts = t
-                    self.tasks = tk
-                    self.isLoading = false
-                }
-            } catch {
-                print("Fetch error: \(error)")
-                await MainActor.run {
-                    self.isLoading = false
-                }
-            }
+            await dataStore.refreshIfNeeded(for: selectedCategory)
         }
     }
 
-    func fetchDataAndHighlightRecent() {
-        Task {
-            do {
-                async let fetchedThoughts = MacAPIClient.shared.fetchThoughts()
-                async let fetchedTasks = MacAPIClient.shared.fetchTasks()
+    func forceRefresh() async {
+        await dataStore.forceRefresh(for: selectedCategory)
+    }
 
-                let (t, tk) = try await (fetchedThoughts, fetchedTasks)
-
-                await MainActor.run {
-                    self.thoughts = t
-                    self.tasks = tk
-
-                    // Highlight the most recent thought
-                    if let firstThought = t.first {
-                        self.highlightedThoughtId = firstThought.id
-                        // Clear after delay
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                            withAnimation {
-                                self.highlightedThoughtId = nil
-                            }
-                        }
-                    }
-                }
-            } catch {
-                print("Fetch error: \(error)")
-            }
-        }
+    func updateDataAfterCapture(thoughts: [ThoughtItem], tasks: [TaskItem]) {
+        dataStore.updateThoughts(thoughts, for: selectedCategory)
+        dataStore.updateTasks(tasks, for: selectedCategory)
     }
 
     func deleteThought(id: String) {
@@ -455,7 +419,7 @@ class WidgetViewModel: ObservableObject {
                 try await MacAPIClient.shared.deleteThought(id: id)
                 await MainActor.run {
                     withAnimation {
-                        self.thoughts.removeAll { $0.id == id }
+                        dataStore.removeThoughtLocally(id: id, category: selectedCategory)
                     }
                 }
             } catch {
@@ -470,7 +434,7 @@ class WidgetViewModel: ObservableObject {
                 try await MacAPIClient.shared.deleteTask(id: id)
                 await MainActor.run {
                     withAnimation {
-                        self.tasks.removeAll { $0.id == id }
+                        dataStore.removeTaskLocally(id: id, category: selectedCategory)
                     }
                 }
             } catch {

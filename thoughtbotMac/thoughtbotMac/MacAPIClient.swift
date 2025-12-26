@@ -22,8 +22,12 @@ actor MacAPIClient {
     private init() {}
 
     // MARK: - Fetch Thoughts
-    func fetchThoughts() async throws -> [ThoughtItem] {
-        let url = URL(string: "\(baseURL)/api/thoughts")!
+    func fetchThoughts(category: String? = nil) async throws -> [ThoughtItem] {
+        var urlString = "\(baseURL)/api/thoughts"
+        if let category = category {
+            urlString += "?category=\(category)"
+        }
+        let url = URL(string: urlString)!
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -47,8 +51,12 @@ actor MacAPIClient {
     }
 
     // MARK: - Fetch Tasks
-    func fetchTasks() async throws -> [TaskItem] {
-        let url = URL(string: "\(baseURL)/api/tasks")!
+    func fetchTasks(category: String? = nil) async throws -> [TaskItem] {
+        var urlString = "\(baseURL)/api/tasks"
+        if let category = category {
+            urlString += "?category=\(category)"
+        }
+        let url = URL(string: urlString)!
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -106,5 +114,43 @@ actor MacAPIClient {
         }
 
         return try JSONDecoder().decode(MacCaptureResponse.self, from: data)
+    }
+
+    // MARK: - Delete Thought
+    func deleteThought(id: String) async throws {
+        let url = URL(string: "\(baseURL)/api/thoughts/\(id)")!
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.timeoutInterval = 30
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw MacAPIError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw MacAPIError.serverError(httpResponse.statusCode)
+        }
+    }
+
+    // MARK: - Delete Task
+    func deleteTask(id: String) async throws {
+        let url = URL(string: "\(baseURL)/api/tasks/\(id)")!
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.timeoutInterval = 30
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw MacAPIError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw MacAPIError.serverError(httpResponse.statusCode)
+        }
     }
 }

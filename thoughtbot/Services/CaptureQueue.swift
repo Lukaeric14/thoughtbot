@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import Combine
 
 @MainActor
 class CaptureQueue: ObservableObject {
@@ -7,6 +8,9 @@ class CaptureQueue: ObservableObject {
 
     @Published private(set) var queuedCount: Int = 0
     @Published private(set) var isProcessing: Bool = false
+
+    // Publisher that fires when a capture is successfully processed
+    let captureCompleted = PassthroughSubject<Void, Never>()
 
     private var queue: [QueuedCapture] = []
     private let queueKey = "CaptureQueue"
@@ -29,7 +33,7 @@ class CaptureQueue: ObservableObject {
         }
     }
 
-    private func processQueue() async {
+    func processQueue() async {
         guard !isProcessing, isNetworkAvailable, !queue.isEmpty else { return }
 
         isProcessing = true
@@ -46,6 +50,9 @@ class CaptureQueue: ObservableObject {
                 saveQueue()
 
                 try? FileManager.default.removeItem(at: capture.audioURL)
+
+                // Notify that a capture was successfully processed
+                captureCompleted.send()
 
             } catch {
                 capture.retryCount += 1

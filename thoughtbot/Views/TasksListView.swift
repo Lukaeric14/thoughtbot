@@ -3,20 +3,21 @@ import Combine
 
 struct TasksListView: View {
     @Binding var selectedCategory: Category
-    @State private var tasks: [TaskItem] = []
-    @State private var isLoading = false
-    @State private var errorMessage: String?
+    @StateObject private var dataStore = DataStore.shared
     @State private var showRecorder = false
     @State private var highlightedId: String?
     @State private var scrollToId: String?
-    @StateObject private var captureQueue = CaptureQueue.shared
+
+    private var tasks: [TaskItem] {
+        dataStore.tasks(for: selectedCategory)
+    }
 
     var body: some View {
         NavigationStack {
             ZStack {
-                if isLoading && tasks.isEmpty {
+                if dataStore.isLoadingTasks && tasks.isEmpty {
                     ProgressView("Loading tasks...")
-                } else if let error = errorMessage, tasks.isEmpty {
+                } else if let error = dataStore.tasksError, tasks.isEmpty {
                     VStack(spacing: 16) {
                         Image(systemName: "exclamationmark.triangle")
                             .font(.largeTitle)
@@ -24,7 +25,7 @@ struct TasksListView: View {
                         Text(error)
                             .foregroundColor(.secondary)
                         Button("Retry") {
-                            Task { await loadTasks() }
+                            Task { await dataStore.forceRefreshTasks(for: selectedCategory) }
                         }
                     }
                 } else if tasks.isEmpty {
@@ -50,7 +51,7 @@ struct TasksListView: View {
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                     Button(role: .destructive) {
                                         Task {
-                                            await deleteTask(id: task.id)
+                                            await deleteTask(task: task)
                                         }
                                     } label: {
                                         Label("Delete", systemImage: "trash")
@@ -60,14 +61,13 @@ struct TasksListView: View {
                         }
                         .listStyle(.plain)
                         .refreshable {
-                            await loadTasks()
+                            await dataStore.forceRefreshTasks(for: selectedCategory)
                         }
                         .onChange(of: scrollToId) { _, newId in
                             if let id = newId {
                                 withAnimation {
                                     proxy.scrollTo(id, anchor: .top)
                                 }
-                                // Clear after scrolling
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                                     scrollToId = nil
                                 }
@@ -99,8 +99,8 @@ struct TasksListView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {
+                        // Instant toggle - data already cached
                         selectedCategory = selectedCategory == .personal ? .business : .personal
-                        Task { await loadTasks() }
                     }) {
                         Image(systemName: selectedCategory == .personal ? "house.fill" : "building.2.fill")
                             .foregroundColor(.secondary)
@@ -112,7 +112,6 @@ struct TasksListView: View {
                         if let firstTask = tasks.first {
                             scrollToId = firstTask.id
                             highlightedId = firstTask.id
-                            // Clear highlight after delay
                             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                                 withAnimation {
                                     highlightedId = nil
@@ -125,31 +124,31 @@ struct TasksListView: View {
             .sheet(isPresented: $showRecorder) {
                 CaptureView()
                     .presentationDetents([.medium])
-                    .onDisappear {
-                        Task {
-                            try? await Task.sleep(nanoseconds: 1_000_000_000)
-                            await loadTasks()
-                        }
-                    }
             }
         }
         .task {
-            await loadTasks()
+            // Initial load if cache is empty/stale
+            await dataStore.refreshTasksIfNeeded(for: selectedCategory)
         }
-        .onReceive(captureQueue.captureCompleted) { _ in
-            // Auto-refresh when a capture is processed
+        .onChange(of: selectedCategory) { _, newCategory in
+            // Refresh if needed when category changes
             Task {
-                // Small delay to ensure backend has finished processing
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                await loadTasks()
-
-                // Highlight the newest task
-                if let firstTask = tasks.first {
-                    scrollToId = firstTask.id
-                    highlightedId = firstTask.id
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                        withAnimation {
-                            highlightedId = nil
+                await dataStore.refreshTasksIfNeeded(for: newCategory)
+            }
+        }
+        .onReceive(dataStore.$personalTasks.merge(with: dataStore.$businessTasks)) { _ in
+            // Highlight newest task when data updates
+            if let firstTask = tasks.first, highlightedId == nil {
+                // Only auto-highlight if we just got new data from a capture
+                if CaptureQueue.shared.isProcessing == false && CaptureQueue.shared.queuedCount == 0 {
+                    // Check if this is a recent task (within last 5 seconds)
+                    if firstTask.createdAt.timeIntervalSinceNow > -5 {
+                        scrollToId = firstTask.id
+                        highlightedId = firstTask.id
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            withAnimation {
+                                highlightedId = nil
+                            }
                         }
                     }
                 }
@@ -157,44 +156,25 @@ struct TasksListView: View {
         }
     }
 
-    private func loadTasks() async {
-        isLoading = true
-        errorMessage = nil
-
-        do {
-            tasks = try await APIClient.shared.fetchTasks(category: selectedCategory)
-        } catch {
-            errorMessage = "Failed to load tasks"
-            print("Error loading tasks: \(error)")
-        }
-
-        isLoading = false
-    }
-
     private func updateTaskStatus(taskId: String, status: TaskStatus) async {
         do {
             let updatedTask = try await APIClient.shared.updateTaskStatus(taskId: taskId, status: status)
-            if let index = tasks.firstIndex(where: { $0.id == taskId }) {
-                tasks[index] = updatedTask
-            }
+            dataStore.updateTaskLocally(updatedTask)
         } catch {
             print("Error updating task: \(error)")
-            // Reload to get fresh state
-            await loadTasks()
+            await dataStore.forceRefreshTasks(for: selectedCategory)
         }
     }
 
-    private func deleteTask(id: String) async {
+    private func deleteTask(task: TaskItem) async {
         do {
-            try await APIClient.shared.deleteTask(id: id)
-            // Remove from local list with animation
+            try await APIClient.shared.deleteTask(id: task.id)
             withAnimation {
-                tasks.removeAll { $0.id == id }
+                dataStore.removeTaskLocally(id: task.id, category: task.category ?? selectedCategory)
             }
         } catch {
             print("Error deleting task: \(error)")
-            // Reload to get fresh state
-            await loadTasks()
+            await dataStore.forceRefreshTasks(for: selectedCategory)
         }
     }
 }

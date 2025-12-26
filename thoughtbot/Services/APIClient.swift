@@ -87,8 +87,13 @@ actor APIClient {
 
     // MARK: - Thoughts
 
-    func fetchThoughts() async throws -> [Thought] {
-        var request = URLRequest(url: Config.thoughtsURL)
+    func fetchThoughts(category: Category? = nil) async throws -> [Thought] {
+        var urlComponents = URLComponents(url: Config.thoughtsURL, resolvingAgainstBaseURL: false)!
+        if let category = category {
+            urlComponents.queryItems = [URLQueryItem(name: "category", value: category.rawValue)]
+        }
+
+        var request = URLRequest(url: urlComponents.url!)
         request.httpMethod = "GET"
         request.timeoutInterval = 30
 
@@ -111,10 +116,19 @@ actor APIClient {
 
     // MARK: - Tasks
 
-    func fetchTasks(status: TaskStatus? = nil) async throws -> [TaskItem] {
+    func fetchTasks(status: TaskStatus? = nil, category: Category? = nil) async throws -> [TaskItem] {
         var urlComponents = URLComponents(url: Config.tasksURL, resolvingAgainstBaseURL: false)!
+        var queryItems: [URLQueryItem] = []
+
         if let status = status {
-            urlComponents.queryItems = [URLQueryItem(name: "status", value: status.rawValue)]
+            queryItems.append(URLQueryItem(name: "status", value: status.rawValue))
+        }
+        if let category = category {
+            queryItems.append(URLQueryItem(name: "category", value: category.rawValue))
+        }
+
+        if !queryItems.isEmpty {
+            urlComponents.queryItems = queryItems
         }
 
         var request = URLRequest(url: urlComponents.url!)
@@ -163,6 +177,44 @@ actor APIClient {
             return try decoder.decode(TaskItem.self, from: data)
         } catch {
             throw APIError.decodingError(error)
+        }
+    }
+
+    // MARK: - Delete
+
+    func deleteThought(id: String) async throws {
+        let url = Config.thoughtsURL.appendingPathComponent(id)
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.timeoutInterval = 30
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.serverError(httpResponse.statusCode)
+        }
+    }
+
+    func deleteTask(id: String) async throws {
+        let url = Config.tasksURL.appendingPathComponent(id)
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.timeoutInterval = 30
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.serverError(httpResponse.statusCode)
         }
     }
 }

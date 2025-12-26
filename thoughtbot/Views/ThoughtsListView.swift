@@ -3,20 +3,21 @@ import Combine
 
 struct ThoughtsListView: View {
     @Binding var selectedCategory: Category
-    @State private var thoughts: [Thought] = []
-    @State private var isLoading = false
-    @State private var errorMessage: String?
+    @StateObject private var dataStore = DataStore.shared
     @State private var showRecorder = false
     @State private var highlightedId: String?
     @State private var scrollToId: String?
-    @StateObject private var captureQueue = CaptureQueue.shared
+
+    private var thoughts: [Thought] {
+        dataStore.thoughts(for: selectedCategory)
+    }
 
     var body: some View {
         NavigationStack {
             ZStack {
-                if isLoading && thoughts.isEmpty {
+                if dataStore.isLoadingThoughts && thoughts.isEmpty {
                     ProgressView("Loading thoughts...")
-                } else if let error = errorMessage, thoughts.isEmpty {
+                } else if let error = dataStore.thoughtsError, thoughts.isEmpty {
                     VStack(spacing: 16) {
                         Image(systemName: "exclamationmark.triangle")
                             .font(.largeTitle)
@@ -24,7 +25,7 @@ struct ThoughtsListView: View {
                         Text(error)
                             .foregroundColor(.secondary)
                         Button("Retry") {
-                            Task { await loadThoughts() }
+                            Task { await dataStore.forceRefreshThoughts(for: selectedCategory) }
                         }
                     }
                 } else if thoughts.isEmpty {
@@ -48,7 +49,7 @@ struct ThoughtsListView: View {
                                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                         Button(role: .destructive) {
                                             Task {
-                                                await deleteThought(id: thought.id)
+                                                await deleteThought(thought: thought)
                                             }
                                         } label: {
                                             Label("Delete", systemImage: "trash")
@@ -58,14 +59,13 @@ struct ThoughtsListView: View {
                         }
                         .listStyle(.plain)
                         .refreshable {
-                            await loadThoughts()
+                            await dataStore.forceRefreshThoughts(for: selectedCategory)
                         }
                         .onChange(of: scrollToId) { _, newId in
                             if let id = newId {
                                 withAnimation {
                                     proxy.scrollTo(id, anchor: .top)
                                 }
-                                // Clear after scrolling
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                                     scrollToId = nil
                                 }
@@ -97,8 +97,8 @@ struct ThoughtsListView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {
+                        // Instant toggle - data already cached
                         selectedCategory = selectedCategory == .personal ? .business : .personal
-                        Task { await loadThoughts() }
                     }) {
                         Image(systemName: selectedCategory == .personal ? "house.fill" : "building.2.fill")
                             .foregroundColor(.secondary)
@@ -110,7 +110,6 @@ struct ThoughtsListView: View {
                         if let firstThought = thoughts.first {
                             scrollToId = firstThought.id
                             highlightedId = firstThought.id
-                            // Clear highlight after delay
                             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                                 withAnimation {
                                     highlightedId = nil
@@ -123,31 +122,31 @@ struct ThoughtsListView: View {
             .sheet(isPresented: $showRecorder) {
                 CaptureView()
                     .presentationDetents([.medium])
-                    .onDisappear {
-                        Task {
-                            try? await Task.sleep(nanoseconds: 1_000_000_000)
-                            await loadThoughts()
-                        }
-                    }
             }
         }
         .task {
-            await loadThoughts()
+            // Initial load if cache is empty/stale
+            await dataStore.refreshThoughtsIfNeeded(for: selectedCategory)
         }
-        .onReceive(captureQueue.captureCompleted) { _ in
-            // Auto-refresh when a capture is processed
+        .onChange(of: selectedCategory) { _, newCategory in
+            // Refresh if needed when category changes
             Task {
-                // Small delay to ensure backend has finished processing
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                await loadThoughts()
-
-                // Highlight the newest thought
-                if let firstThought = thoughts.first {
-                    scrollToId = firstThought.id
-                    highlightedId = firstThought.id
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                        withAnimation {
-                            highlightedId = nil
+                await dataStore.refreshThoughtsIfNeeded(for: newCategory)
+            }
+        }
+        .onReceive(dataStore.$personalThoughts.merge(with: dataStore.$businessThoughts)) { _ in
+            // Highlight newest thought when data updates
+            if let firstThought = thoughts.first, highlightedId == nil {
+                // Only auto-highlight if we just got new data from a capture
+                if CaptureQueue.shared.isProcessing == false && CaptureQueue.shared.queuedCount == 0 {
+                    // Check if this is a recent thought (within last 5 seconds)
+                    if firstThought.createdAt.timeIntervalSinceNow > -5 {
+                        scrollToId = firstThought.id
+                        highlightedId = firstThought.id
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            withAnimation {
+                                highlightedId = nil
+                            }
                         }
                     }
                 }
@@ -155,31 +154,15 @@ struct ThoughtsListView: View {
         }
     }
 
-    private func loadThoughts() async {
-        isLoading = true
-        errorMessage = nil
-
+    private func deleteThought(thought: Thought) async {
         do {
-            thoughts = try await APIClient.shared.fetchThoughts(category: selectedCategory)
-        } catch {
-            errorMessage = "Failed to load thoughts"
-            print("Error loading thoughts: \(error)")
-        }
-
-        isLoading = false
-    }
-
-    private func deleteThought(id: String) async {
-        do {
-            try await APIClient.shared.deleteThought(id: id)
-            // Remove from local list with animation
+            try await APIClient.shared.deleteThought(id: thought.id)
             withAnimation {
-                thoughts.removeAll { $0.id == id }
+                dataStore.removeThoughtLocally(id: thought.id, category: thought.category ?? selectedCategory)
             }
         } catch {
             print("Error deleting thought: \(error)")
-            // Reload to get fresh state
-            await loadThoughts()
+            await dataStore.forceRefreshThoughts(for: selectedCategory)
         }
     }
 }

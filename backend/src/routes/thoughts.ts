@@ -11,9 +11,12 @@ interface ThoughtWithTranscript extends Thought {
 }
 
 // GET /api/thoughts - List all thoughts (optionally filtered by category)
+// Supports pagination: ?limit=50&offset=0 (default limit: 100)
 router.get('/', async (req, res) => {
   try {
     const category = req.query.category as string | undefined;
+    const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
+    const offset = parseInt(req.query.offset as string) || 0;
 
     let sql = `
       SELECT t.*, c.transcript, c.audio_url
@@ -21,14 +24,19 @@ router.get('/', async (req, res) => {
       LEFT JOIN captures c ON t.capture_id = c.id
     `;
     const params: unknown[] = [];
+    let paramIndex = 1;
 
     if (category) {
-      sql += ` WHERE t.category = $1`;
+      sql += ` WHERE t.category = $${paramIndex++}`;
       params.push(category);
     }
 
     // Sort by mention_count DESC (most mentioned first), then by created_at DESC
     sql += ` ORDER BY t.mention_count DESC, t.created_at DESC`;
+
+    // Add pagination
+    sql += ` LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+    params.push(limit, offset);
 
     const thoughts = await query<ThoughtWithTranscript>(sql, params);
     res.json(thoughts);

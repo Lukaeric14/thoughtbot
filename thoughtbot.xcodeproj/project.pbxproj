@@ -29,9 +29,22 @@
 		D15B47B62EEFDD60001627C8 /* thoughtbotUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = thoughtbotUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		D15B48E82EF04909001627C8 /* Exceptions for "thoughtbot" folder in "thoughtbot" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = D15B479B2EEFDD5F001627C8 /* thoughtbot */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		D15B479E2EEFDD5F001627C8 /* thoughtbot */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				D15B48E82EF04909001627C8 /* Exceptions for "thoughtbot" folder in "thoughtbot" target */,
+			);
 			path = thoughtbot;
 			sourceTree = "<group>";
 		};
@@ -399,6 +412,8 @@
 				DEVELOPMENT_TEAM = 75BKT5YX24;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = thoughtbot/Info.plist;
+				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "$(PRODUCT_BUNDLE_IDENTIFIER).refresh $(PRODUCT_BUNDLE_IDENTIFIER).processing";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Thoughtbot needs microphone access to capture voice notes";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -429,6 +444,8 @@
 				DEVELOPMENT_TEAM = 75BKT5YX24;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = thoughtbot/Info.plist;
+				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "$(PRODUCT_BUNDLE_IDENTIFIER).refresh $(PRODUCT_BUNDLE_IDENTIFIER).processing";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Thoughtbot needs microphone access to capture voice notes";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

@@ -19,6 +19,7 @@ struct thoughtbotMacApp: App {
     }
 }
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popoverWindow: RecordingWindow?

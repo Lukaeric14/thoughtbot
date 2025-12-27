@@ -27,6 +27,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var runLoopSource: CFRunLoopSource?
     private var isRecording = false
     private var isShiftHeld = false
+    private var isTyping = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("App launching...")
@@ -57,7 +58,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Hold Right Option to record", action: nil, keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Hold Right Option to record voice", action: nil, keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Press Left Option to type", action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
@@ -106,12 +108,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Track shift state
         isShiftHeld = flags.contains(.maskShift)
 
-        // Right Option key code is 61
+        // Right Option key code is 61 (voice recording)
         let isRightOptionPressed = keyCode == 61 && flags.contains(.maskAlternate)
         let isRightOptionReleased = keyCode == 61 && !flags.contains(.maskAlternate)
 
-        print("Key event - keyCode: \(keyCode), flags: \(flags.rawValue), rightOptPressed: \(isRightOptionPressed), rightOptReleased: \(isRightOptionReleased), isRecording: \(isRecording)")
+        // Left Option key code is 58 (typing input)
+        let isLeftOptionPressed = keyCode == 58 && flags.contains(.maskAlternate)
 
+        print("Key event - keyCode: \(keyCode), flags: \(flags.rawValue), rightOptPressed: \(isRightOptionPressed), rightOptReleased: \(isRightOptionReleased), leftOptPressed: \(isLeftOptionPressed), isRecording: \(isRecording)")
+
+        // Left Option = activate typing mode (single press)
+        if isLeftOptionPressed && !isRecording && !isTyping {
+            print("Activating typing mode...")
+            isTyping = true
+            DispatchQueue.main.async {
+                self.showTypingWindow()
+            }
+        }
+
+        // Right Option handling (voice recording)
         if isRightOptionPressed {
             if isShiftHeld {
                 // Shift + Right Option = toggle expanded view
@@ -119,7 +134,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.async {
                     self.popoverWindow?.toggleExpanded()
                 }
-            } else if !isRecording {
+            } else if !isRecording && !isTyping {
                 // Just Right Option = start recording
                 print("Starting recording...")
                 isRecording = true
@@ -144,6 +159,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func hideRecordingWindow() {
         popoverWindow?.stopAndSend()
+    }
+
+    private func showTypingWindow() {
+        popoverWindow?.showTyping()
+    }
+
+    func resetTypingState() {
+        isTyping = false
     }
 
     @objc private func quit() {

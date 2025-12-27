@@ -29,6 +29,11 @@ struct MacCaptureStatus: Codable {
     }
 }
 
+struct SSECaptureResult: Codable {
+    let classification: String
+    let category: String
+}
+
 enum MacCaptureResult {
     case thought
     case task
@@ -55,12 +60,23 @@ actor MacAPIClient {
     private init() {}
 
     // MARK: - Fetch Thoughts
-    func fetchThoughts(category: String? = nil) async throws -> [ThoughtItem] {
-        var urlString = "\(baseURL)/api/thoughts"
-        if let category = category {
-            urlString += "?category=\(category)"
+    func fetchThoughts(category: String? = nil, slim: Bool = true) async throws -> [ThoughtItem] {
+        guard var components = URLComponents(string: "\(baseURL)/api/thoughts") else {
+            throw MacAPIError.invalidURL
         }
-        let url = URL(string: urlString)!
+        var queryItems: [URLQueryItem] = []
+        if let category = category {
+            queryItems.append(URLQueryItem(name: "category", value: category))
+        }
+        if slim {
+            queryItems.append(URLQueryItem(name: "slim", value: "true"))
+        }
+        if !queryItems.isEmpty {
+            components.queryItems = queryItems
+        }
+        guard let url = components.url else {
+            throw MacAPIError.invalidURL
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -84,12 +100,23 @@ actor MacAPIClient {
     }
 
     // MARK: - Fetch Tasks
-    func fetchTasks(category: String? = nil) async throws -> [TaskItem] {
-        var urlString = "\(baseURL)/api/tasks"
-        if let category = category {
-            urlString += "?category=\(category)"
+    func fetchTasks(category: String? = nil, slim: Bool = true) async throws -> [TaskItem] {
+        guard var components = URLComponents(string: "\(baseURL)/api/tasks") else {
+            throw MacAPIError.invalidURL
         }
-        let url = URL(string: urlString)!
+        var queryItems: [URLQueryItem] = []
+        if let category = category {
+            queryItems.append(URLQueryItem(name: "category", value: category))
+        }
+        if slim {
+            queryItems.append(URLQueryItem(name: "slim", value: "true"))
+        }
+        if !queryItems.isEmpty {
+            components.queryItems = queryItems
+        }
+        guard let url = components.url else {
+            throw MacAPIError.invalidURL
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -114,7 +141,9 @@ actor MacAPIClient {
 
     // MARK: - Fetch Capture Status
     func fetchCaptureStatus(id: String) async throws -> MacCaptureStatus {
-        let url = URL(string: "\(baseURL)/api/captures/\(id)")!
+        guard let url = URL(string: "\(baseURL)/api/captures/\(id)") else {
+            throw MacAPIError.invalidURL
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -133,10 +162,67 @@ actor MacAPIClient {
         return try JSONDecoder().decode(MacCaptureStatus.self, from: data)
     }
 
+    // MARK: - Stream Capture Status (SSE)
+    // Uses Server-Sent Events for efficient real-time updates
+    // Falls back to polling if SSE fails
+    func streamCaptureStatus(id: String) async throws -> MacCaptureStatus {
+        guard let url = URL(string: "\(baseURL)/api/captures/\(id)/stream") else {
+            throw MacAPIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 60 // Longer timeout for SSE
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw MacAPIError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw MacAPIError.serverError(httpResponse.statusCode)
+        }
+
+        // Response could be JSON (if already complete) or SSE data
+        let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? ""
+
+        if contentType.contains("application/json") {
+            // Already complete, parse as JSON
+            return try JSONDecoder().decode(MacCaptureStatus.self, from: data)
+        }
+
+        // Parse SSE data format: "data: {...}\n\n"
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw MacAPIError.invalidResponse
+        }
+
+        // Extract JSON from SSE format
+        let lines = text.components(separatedBy: "\n")
+        for line in lines {
+            if line.hasPrefix("data: ") {
+                let jsonString = String(line.dropFirst(6))
+                if let jsonData = jsonString.data(using: .utf8) {
+                    let sseResult = try JSONDecoder().decode(SSECaptureResult.self, from: jsonData)
+                    return MacCaptureStatus(
+                        id: id,
+                        classification: sseResult.classification,
+                        raw_llm_output: "{\"category\":\"\(sseResult.category)\"}"
+                    )
+                }
+            }
+        }
+
+        throw MacAPIError.invalidResponse
+    }
+
     // MARK: - Upload Capture
     func uploadCapture(audioURL: URL) async throws -> MacCaptureResponse {
         let boundary = UUID().uuidString
-        let url = URL(string: "\(baseURL)/api/captures")!
+        guard let url = URL(string: "\(baseURL)/api/captures") else {
+            throw MacAPIError.invalidURL
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -172,7 +258,9 @@ actor MacAPIClient {
 
     // MARK: - Delete Thought
     func deleteThought(id: String) async throws {
-        let url = URL(string: "\(baseURL)/api/thoughts/\(id)")!
+        guard let url = URL(string: "\(baseURL)/api/thoughts/\(id)") else {
+            throw MacAPIError.invalidURL
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
@@ -189,9 +277,42 @@ actor MacAPIClient {
         }
     }
 
+    // MARK: - Upload Text Capture
+    func uploadTextCapture(text: String, category: String? = nil) async throws -> MacCaptureResponse {
+        guard let url = URL(string: "\(baseURL)/api/captures/text") else {
+            throw MacAPIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30
+
+        var body: [String: Any] = ["text": text]
+        if let category = category {
+            body["category"] = category
+        }
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw MacAPIError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw MacAPIError.serverError(httpResponse.statusCode)
+        }
+
+        return try JSONDecoder().decode(MacCaptureResponse.self, from: data)
+    }
+
     // MARK: - Delete Task
     func deleteTask(id: String) async throws {
-        let url = URL(string: "\(baseURL)/api/tasks/\(id)")!
+        guard let url = URL(string: "\(baseURL)/api/tasks/\(id)") else {
+            throw MacAPIError.invalidURL
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"

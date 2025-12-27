@@ -1,6 +1,12 @@
 import SwiftUI
 import AppKit
 
+// Custom NSWindow that can become key (required for borderless windows to accept keyboard input)
+class KeyableWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 // Custom tracking view for mouse enter/exit events
 class TrackingView: NSView {
     var onMouseEntered: (() -> Void)?
@@ -41,6 +47,11 @@ class RecordingWindow: NSObject {
     private var trackingView: TrackingView?
     private var viewModel = WidgetViewModel()
 
+    // Hover state management to prevent flickering
+    private var lastHoverChangeTime: Date = .distantPast
+    private let hoverDebounceInterval: TimeInterval = 0.35
+    private var isAnimatingHover = false
+
     // Size constants
     private let idleWidth: CGFloat = 12
     private let idleHeight: CGFloat = 48
@@ -56,7 +67,11 @@ class RecordingWindow: NSObject {
     }
 
     private func setupWindow() {
-        let swiftUIView = WidgetView(viewModel: viewModel)
+        let swiftUIView = WidgetView(
+            viewModel: viewModel,
+            onSubmit: { [weak self] in self?.submitTypedText() },
+            onCancel: { [weak self] in self?.cancelTyping() }
+        )
         hostingView = NSHostingView(rootView: swiftUIView)
 
         // Create tracking view as container
@@ -78,7 +93,7 @@ class RecordingWindow: NSObject {
             ])
         }
 
-        let window = NSWindow(
+        let window = KeyableWindow(
             contentRect: NSRect(x: 0, y: 0, width: idleWidth, height: idleHeight),
             styleMask: [.borderless],
             backing: .buffered,
@@ -111,6 +126,13 @@ class RecordingWindow: NSObject {
 
     private func handleMouseEntered() {
         guard viewModel.widgetState == .idle else { return }
+        guard !isAnimatingHover else { return }
+
+        // Debounce rapid hover changes
+        let now = Date()
+        guard now.timeIntervalSince(lastHoverChangeTime) >= hoverDebounceInterval else { return }
+        lastHoverChangeTime = now
+        isAnimatingHover = true
 
         // Fade out, resize, then fade in with new content
         NSAnimationContext.runAnimationGroup { context in
@@ -124,14 +146,35 @@ class RecordingWindow: NSObject {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.15
                 self.window?.animator().alphaValue = 1
+            } completionHandler: {
+                self.isAnimatingHover = false
             }
         }
     }
 
     private func handleMouseExited() {
         guard viewModel.widgetState != .expanded else { return }
+        guard !isAnimatingHover else { return }
 
-        if viewModel.widgetState == .idle {
+        // Check if mouse is actually outside the window frame
+        guard let window = window else { return }
+        let mouseLocation = NSEvent.mouseLocation
+        let windowFrame = window.frame
+
+        // Add a small margin to prevent edge flickering
+        let expandedFrame = windowFrame.insetBy(dx: -5, dy: -5)
+        if expandedFrame.contains(mouseLocation) {
+            return // Mouse is still inside, ignore this exit event
+        }
+
+        // Debounce rapid hover changes
+        let now = Date()
+        guard now.timeIntervalSince(lastHoverChangeTime) >= hoverDebounceInterval else { return }
+
+        if viewModel.widgetState == .idle && viewModel.isHovering {
+            lastHoverChangeTime = now
+            isAnimatingHover = true
+
             // Fade out, resize, then fade in
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.1
@@ -143,10 +186,16 @@ class RecordingWindow: NSObject {
                 NSAnimationContext.runAnimationGroup { context in
                     context.duration = 0.15
                     self.window?.animator().alphaValue = 1
+                } completionHandler: {
+                    self.isAnimatingHover = false
                 }
             }
         }
     }
+
+    // Size for typing input
+    private let typingWidth: CGFloat = 320
+    private let typingHeight: CGFloat = 56
 
     private func positionWindow(state: WidgetState, animate: Bool) {
         guard let window = window, let screen = NSScreen.main else { return }
@@ -165,6 +214,9 @@ class RecordingWindow: NSObject {
         case .expanded:
             width = expandedWidth
             height = expandedHeight
+        case .typing:
+            width = typingWidth
+            height = typingHeight
         }
 
         // Position on right edge, vertically centered
@@ -183,7 +235,7 @@ class RecordingWindow: NSObject {
             window.setFrame(newFrame, display: true)
         }
 
-        // Update mouse tracking
+        // Update mouse tracking - allow mouse events for typing
         window.ignoresMouseEvents = state == .recording || state == .processing
     }
 
@@ -279,28 +331,52 @@ class RecordingWindow: NSObject {
     }
 
     private func waitForCaptureAndNavigate(captureId: String) async {
-        print("Polling for capture: \(captureId), isProcessing: \(viewModel.isProcessing)")
-
-        // Poll for classification (max 30 seconds at 500ms intervals)
-        let maxAttempts = 60
-        let pollInterval: UInt64 = 500_000_000  // 500ms
+        print("Waiting for capture: \(captureId), isProcessing: \(viewModel.isProcessing)")
 
         var captureResult: MacCaptureResult = .unknown
         var captureCategory: String? = nil
 
-        for attempt in 0..<maxAttempts {
-            do {
-                let status = try await MacAPIClient.shared.fetchCaptureStatus(id: captureId)
-                if let classification = status.classification {
-                    print("Classification found after \(attempt) attempts: \(classification), category: \(status.category ?? "nil")")
-                    captureResult = MacCaptureResult(from: classification)
-                    captureCategory = status.category
-                    break
-                }
-            } catch {
-                print("Poll error: \(error)")
+        // Try SSE first (single connection, instant notification)
+        do {
+            print("Using SSE for capture: \(captureId)")
+            let status = try await MacAPIClient.shared.streamCaptureStatus(id: captureId)
+            if let classification = status.classification {
+                print("SSE received classification: \(classification), category: \(status.category ?? "nil")")
+                captureResult = MacCaptureResult(from: classification)
+                captureCategory = status.category
             }
-            try? await Task.sleep(nanoseconds: pollInterval)
+        } catch {
+            print("SSE failed, falling back to polling: \(error)")
+
+            // Fallback to polling with exponential backoff
+            let maxTotalTime: TimeInterval = 30.0
+            let initialInterval: UInt64 = 500_000_000  // 500ms
+            let maxInterval: UInt64 = 4_000_000_000    // 4s cap
+
+            var currentInterval = initialInterval
+            var totalElapsed: TimeInterval = 0
+            var attempt = 0
+
+            while totalElapsed < maxTotalTime {
+                do {
+                    let status = try await MacAPIClient.shared.fetchCaptureStatus(id: captureId)
+                    if let classification = status.classification {
+                        print("Classification found after \(attempt) attempts (\(String(format: "%.1f", totalElapsed))s): \(classification), category: \(status.category ?? "nil")")
+                        captureResult = MacCaptureResult(from: classification)
+                        captureCategory = status.category
+                        break
+                    }
+                } catch {
+                    print("Poll error: \(error)")
+                }
+
+                try? await Task.sleep(nanoseconds: currentInterval)
+                totalElapsed += Double(currentInterval) / 1_000_000_000.0
+                attempt += 1
+
+                // Exponential backoff with cap
+                currentInterval = min(currentInterval * 2, maxInterval)
+            }
         }
 
         // Switch to the category where the item was created
@@ -310,14 +386,13 @@ class RecordingWindow: NSObject {
             viewModel.selectedCategory = category
         }
 
-        // Fetch fresh data for the correct category
+        // Force refresh cache for the correct category (uses existing DataStore)
         do {
-            let thoughts = try await MacAPIClient.shared.fetchThoughts(category: category)
-            let tasks = try await MacAPIClient.shared.fetchTasks(category: category)
+            await MacDataStore.shared.forceRefresh(for: category)
+            let thoughts = MacDataStore.shared.thoughts(for: category)
+            let tasks = MacDataStore.shared.tasks(for: category)
 
-            print("Fetched \(thoughts.count) thoughts, \(tasks.count) tasks. Result: \(captureResult)")
-
-            viewModel.updateDataAfterCapture(thoughts: thoughts, tasks: tasks)
+            print("Refreshed cache: \(thoughts.count) thoughts, \(tasks.count) tasks. Result: \(captureResult)")
             viewModel.processingCount = max(0, viewModel.processingCount - 1)
             viewModel.widgetState = .idle
             positionWindow(state: .idle, animate: true)
@@ -375,6 +450,80 @@ class RecordingWindow: NSObject {
         positionWindow(state: .idle, animate: true)
         window.orderFrontRegardless()
     }
+
+    func showTyping() {
+        guard let window = window else {
+            print("RecordingWindow.showTyping() - window is nil")
+            return
+        }
+
+        print("RecordingWindow.showTyping() - activating typing mode")
+
+        viewModel.typingText = ""
+        viewModel.widgetState = .typing
+        viewModel.isHovering = false
+
+        positionWindow(state: .typing, animate: true)
+        window.orderFrontRegardless()
+
+        // Make window key to receive keyboard input
+        window.makeKey()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func submitTypedText() {
+        let text = viewModel.typingText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            cancelTyping()
+            return
+        }
+
+        print("submitTypedText: submitting '\(text)', processingCount will be \(viewModel.processingCount + 1)")
+        viewModel.widgetState = .processing
+        viewModel.processingCount += 1
+        viewModel.typingText = ""
+
+        // Reset AppDelegate typing state
+        if let appDelegate = NSApp.delegate as? AppDelegate {
+            appDelegate.resetTypingState()
+        }
+
+        // Resize to processing state
+        positionWindow(state: .processing, animate: true)
+
+        Task {
+            do {
+                print("submitTypedText: uploading text...")
+                let response = try await MacAPIClient.shared.uploadTextCapture(
+                    text: text,
+                    category: viewModel.selectedCategory
+                )
+                print("submitTypedText: upload complete, capture ID: \(response.id)")
+
+                // Poll for classification, then fetch data and navigate
+                await self.waitForCaptureAndNavigate(captureId: response.id)
+
+            } catch {
+                print("Text upload error: \(error)")
+                viewModel.processingCount = max(0, viewModel.processingCount - 1)
+                viewModel.widgetState = .idle
+                positionWindow(state: .idle, animate: true)
+            }
+        }
+    }
+
+    func cancelTyping() {
+        print("RecordingWindow.cancelTyping()")
+        viewModel.typingText = ""
+        viewModel.widgetState = .idle
+
+        // Reset AppDelegate typing state
+        if let appDelegate = NSApp.delegate as? AppDelegate {
+            appDelegate.resetTypingState()
+        }
+
+        positionWindow(state: .idle, animate: true)
+    }
 }
 
 // MARK: - Widget State
@@ -383,6 +532,7 @@ enum WidgetState {
     case recording
     case processing
     case expanded
+    case typing
 }
 
 // MARK: - Data Models
@@ -418,6 +568,7 @@ class WidgetViewModel: ObservableObject {
     @Published var processingCount = 0
     @Published var highlightedThoughtId: String?
     @Published var highlightedTaskId: String?
+    @Published var typingText: String = ""
 
     // Persisted category
     @AppStorage("macSelectedCategory") var selectedCategory: String = "personal"
@@ -499,13 +650,74 @@ class WidgetViewModel: ObservableObject {
 // MARK: - Main Widget View
 struct WidgetView: View {
     @ObservedObject var viewModel: WidgetViewModel
+    var onSubmit: (() -> Void)?
+    var onCancel: (() -> Void)?
 
     var body: some View {
         // No animation on content - window frame handles the animation
-        if viewModel.showExpanded {
+        if viewModel.widgetState == .typing {
+            TypingInputView(viewModel: viewModel, onSubmit: onSubmit, onCancel: onCancel)
+        } else if viewModel.showExpanded {
             ExpandedView(viewModel: viewModel)
         } else {
             StatusIndicatorView(viewModel: viewModel)
+        }
+    }
+}
+
+// MARK: - Typing Input View
+struct TypingInputView: View {
+    @ObservedObject var viewModel: WidgetViewModel
+    var onSubmit: (() -> Void)?
+    var onCancel: (() -> Void)?
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Keyboard icon
+            Image(systemName: "keyboard")
+                .font(.system(size: 16))
+                .foregroundColor(.white.opacity(0.5))
+
+            // Text field
+            TextField("Type a thought or task...", text: $viewModel.typingText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 14))
+                .foregroundColor(.white)
+                .focused($isFocused)
+                .onSubmit {
+                    onSubmit?()
+                }
+                .onExitCommand {
+                    onCancel?()
+                }
+
+            // Submit button
+            if !viewModel.typingText.isEmpty {
+                Button(action: { onSubmit?() }) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(.accentColor)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.black.opacity(0.9))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                )
+        )
+        .onAppear {
+            // Auto-focus when view appears
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                isFocused = true
+            }
         }
     }
 }
@@ -877,7 +1089,7 @@ struct StatusIndicatorView: View {
                 RecordingIndicator()
             case .processing:
                 MacProcessingIndicator()
-            case .expanded:
+            case .expanded, .typing:
                 EmptyView()
             }
         }

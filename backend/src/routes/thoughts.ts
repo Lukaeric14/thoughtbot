@@ -12,27 +12,36 @@ interface ThoughtWithTranscript extends Thought {
 
 // GET /api/thoughts - List all thoughts (optionally filtered by category)
 // Supports pagination: ?limit=50&offset=0 (default limit: 100)
+// Use ?slim=true to skip transcript/audio_url JOIN for faster list queries
 router.get('/', async (req, res) => {
   try {
     const category = req.query.category as string | undefined;
+    const slim = req.query.slim === 'true';
     const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
     const offset = parseInt(req.query.offset as string) || 0;
 
-    let sql = `
-      SELECT t.*, c.transcript, c.audio_url
-      FROM thoughts t
-      LEFT JOIN captures c ON t.capture_id = c.id
-    `;
+    let sql: string;
+    if (slim) {
+      // Fast query without JOIN - for list views
+      sql = `SELECT * FROM thoughts`;
+    } else {
+      // Full query with transcript - for detail views
+      sql = `
+        SELECT t.*, c.transcript, c.audio_url
+        FROM thoughts t
+        LEFT JOIN captures c ON t.capture_id = c.id
+      `;
+    }
     const params: unknown[] = [];
     let paramIndex = 1;
 
     if (category) {
-      sql += ` WHERE t.category = $${paramIndex++}`;
+      sql += slim ? ` WHERE category = $${paramIndex++}` : ` WHERE t.category = $${paramIndex++}`;
       params.push(category);
     }
 
     // Sort by mention_count DESC (most mentioned first), then by created_at DESC
-    sql += ` ORDER BY t.mention_count DESC, t.created_at DESC`;
+    sql += slim ? ` ORDER BY mention_count DESC, created_at DESC` : ` ORDER BY t.mention_count DESC, t.created_at DESC`;
 
     // Add pagination
     sql += ` LIMIT $${paramIndex++} OFFSET $${paramIndex}`;

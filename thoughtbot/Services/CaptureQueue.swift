@@ -81,10 +81,16 @@ class CaptureQueue: ObservableObject {
     }
 
     private func pollForClassification(captureId: String) async -> CaptureResult {
-        let maxAttempts = 60  // 30 seconds at 500ms intervals
-        let pollInterval: UInt64 = 500_000_000  // 500ms in nanoseconds
+        // Exponential backoff: starts at 500ms, doubles each attempt, caps at 4s
+        // Max total time: 30 seconds
+        let maxTotalTime: TimeInterval = 30.0
+        let initialInterval: UInt64 = 500_000_000  // 500ms
+        let maxInterval: UInt64 = 4_000_000_000    // 4s cap
 
-        for _ in 0..<maxAttempts {
+        var currentInterval = initialInterval
+        var totalElapsed: TimeInterval = 0
+
+        while totalElapsed < maxTotalTime {
             do {
                 let status = try await APIClient.shared.fetchCaptureStatus(id: captureId)
                 if let classification = status.classification {
@@ -94,7 +100,11 @@ class CaptureQueue: ObservableObject {
                 // Continue polling on error
             }
 
-            try? await Task.sleep(nanoseconds: pollInterval)
+            try? await Task.sleep(nanoseconds: currentInterval)
+            totalElapsed += Double(currentInterval) / 1_000_000_000.0
+
+            // Exponential backoff with cap
+            currentInterval = min(currentInterval * 2, maxInterval)
         }
 
         // Timeout - return unknown

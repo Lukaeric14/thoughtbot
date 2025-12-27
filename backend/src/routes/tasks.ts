@@ -11,28 +11,38 @@ interface TaskWithTranscript extends Task {
 
 // GET /api/tasks - List all tasks (optionally filtered by status and category)
 // Supports pagination: ?limit=50&offset=0 (default limit: 100)
+// Use ?slim=true to skip transcript JOIN for faster list queries
 router.get('/', async (req, res) => {
   try {
     const status = req.query.status as TaskStatus | undefined;
     const category = req.query.category as string | undefined;
+    const slim = req.query.slim === 'true';
     const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
     const offset = parseInt(req.query.offset as string) || 0;
 
-    let sql = `
-      SELECT t.*, c.transcript
-      FROM tasks t
-      LEFT JOIN captures c ON t.capture_id = c.id
-    `;
+    const tableAlias = slim ? '' : 't.';
+    let sql: string;
+    if (slim) {
+      // Fast query without JOIN - for list views
+      sql = `SELECT * FROM tasks`;
+    } else {
+      // Full query with transcript - for detail views
+      sql = `
+        SELECT t.*, c.transcript
+        FROM tasks t
+        LEFT JOIN captures c ON t.capture_id = c.id
+      `;
+    }
     const params: unknown[] = [];
     const conditions: string[] = [];
 
     if (status) {
-      conditions.push(`t.status = $${params.length + 1}`);
+      conditions.push(`${tableAlias}status = $${params.length + 1}`);
       params.push(status);
     }
 
     if (category) {
-      conditions.push(`t.category = $${params.length + 1}`);
+      conditions.push(`${tableAlias}category = $${params.length + 1}`);
       params.push(category);
     }
 
@@ -41,7 +51,7 @@ router.get('/', async (req, res) => {
     }
 
     // Sort by mention_count DESC (most mentioned first), then by created_at DESC
-    sql += ` ORDER BY t.mention_count DESC, t.created_at DESC`;
+    sql += ` ORDER BY ${tableAlias}mention_count DESC, ${tableAlias}created_at DESC`;
 
     // Add pagination
     sql += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;

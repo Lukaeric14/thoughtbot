@@ -1,6 +1,6 @@
 import { query, queryOne } from '../db/client.js';
 import { normalizeText, findDuplicateTask, findMatchingTask } from './deduplication.js';
-import { findSemanticTaskMatch, findSemanticThoughtMatch } from './semanticMatcher.js';
+import { findSemanticTaskMatch, findSemanticThoughtMatch, invalidateEmbeddingCache } from './semanticMatcher.js';
 import type { Task, Thought, TaskCreatePayload, TaskUpdatePayload, ThoughtPayload, Category } from '../types/index.js';
 
 function getTodayDate(): string {
@@ -45,6 +45,9 @@ export async function createThought(
     throw new Error('Failed to create thought');
   }
 
+  // Invalidate embedding cache so new item is included in future matches
+  invalidateEmbeddingCache();
+
   return { thought: result, isDuplicate: false };
 }
 
@@ -86,6 +89,9 @@ export async function createTask(
   if (!result) {
     throw new Error('Failed to create task');
   }
+
+  // Invalidate embedding cache so new item is included in future matches
+  invalidateEmbeddingCache();
 
   return { task: result, isDuplicate: false };
 }

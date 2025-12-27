@@ -107,10 +107,18 @@ actor APIClient {
 
     // MARK: - Thoughts
 
-    func fetchThoughts(category: Category? = nil) async throws -> [Thought] {
+    func fetchThoughts(category: Category? = nil, slim: Bool = true) async throws -> [Thought] {
         var urlComponents = URLComponents(url: Config.thoughtsURL, resolvingAgainstBaseURL: false)!
+        var queryItems: [URLQueryItem] = []
+
         if let category = category {
-            urlComponents.queryItems = [URLQueryItem(name: "category", value: category.rawValue)]
+            queryItems.append(URLQueryItem(name: "category", value: category.rawValue))
+        }
+        if slim {
+            queryItems.append(URLQueryItem(name: "slim", value: "true"))
+        }
+        if !queryItems.isEmpty {
+            urlComponents.queryItems = queryItems
         }
 
         var request = URLRequest(url: urlComponents.url!)
@@ -136,7 +144,7 @@ actor APIClient {
 
     // MARK: - Tasks
 
-    func fetchTasks(status: TaskStatus? = nil, category: Category? = nil) async throws -> [TaskItem] {
+    func fetchTasks(status: TaskStatus? = nil, category: Category? = nil, slim: Bool = true) async throws -> [TaskItem] {
         var urlComponents = URLComponents(url: Config.tasksURL, resolvingAgainstBaseURL: false)!
         var queryItems: [URLQueryItem] = []
 
@@ -145,6 +153,9 @@ actor APIClient {
         }
         if let category = category {
             queryItems.append(URLQueryItem(name: "category", value: category.rawValue))
+        }
+        if slim {
+            queryItems.append(URLQueryItem(name: "slim", value: "true"))
         }
 
         if !queryItems.isEmpty {

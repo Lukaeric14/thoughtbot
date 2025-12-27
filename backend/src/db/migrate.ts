@@ -64,6 +64,10 @@ BEGIN
   END IF;
 END $$;
 
+-- Add embedding columns for semantic matching (stored as JSON arrays)
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS embedding TEXT;
+ALTER TABLE thoughts ADD COLUMN IF NOT EXISTS embedding TEXT;
+
 `;
 
 async function migrate() {

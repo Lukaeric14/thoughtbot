@@ -18,7 +18,55 @@ class MacDataStore: ObservableObject {
     private var lastThoughtsFetch: [String: Date] = [:]
     private let cacheTimeout: TimeInterval = 30 // seconds
 
-    private init() {}
+    // MARK: - Persistent Cache Keys
+    private let personalTasksKey = "MacDataStore.personalTasks"
+    private let businessTasksKey = "MacDataStore.businessTasks"
+    private let personalThoughtsKey = "MacDataStore.personalThoughts"
+    private let businessThoughtsKey = "MacDataStore.businessThoughts"
+
+    private init() {
+        loadFromDisk()
+    }
+
+    // MARK: - Disk Persistence
+
+    private func loadFromDisk() {
+        let decoder = JSONDecoder()
+
+        if let data = UserDefaults.standard.data(forKey: personalTasksKey),
+           let tasks = try? decoder.decode([TaskItem].self, from: data) {
+            personalTasks = tasks
+        }
+        if let data = UserDefaults.standard.data(forKey: businessTasksKey),
+           let tasks = try? decoder.decode([TaskItem].self, from: data) {
+            businessTasks = tasks
+        }
+        if let data = UserDefaults.standard.data(forKey: personalThoughtsKey),
+           let thoughts = try? decoder.decode([ThoughtItem].self, from: data) {
+            personalThoughts = thoughts
+        }
+        if let data = UserDefaults.standard.data(forKey: businessThoughtsKey),
+           let thoughts = try? decoder.decode([ThoughtItem].self, from: data) {
+            businessThoughts = thoughts
+        }
+    }
+
+    private func saveToDisk() {
+        let encoder = JSONEncoder()
+
+        if let data = try? encoder.encode(personalTasks) {
+            UserDefaults.standard.set(data, forKey: personalTasksKey)
+        }
+        if let data = try? encoder.encode(businessTasks) {
+            UserDefaults.standard.set(data, forKey: businessTasksKey)
+        }
+        if let data = try? encoder.encode(personalThoughts) {
+            UserDefaults.standard.set(data, forKey: personalThoughtsKey)
+        }
+        if let data = try? encoder.encode(businessThoughts) {
+            UserDefaults.standard.set(data, forKey: businessThoughtsKey)
+        }
+    }
 
     // MARK: - Public API
 
@@ -92,6 +140,7 @@ class MacDataStore: ObservableObject {
             personalTasks = tasks
         }
         lastTasksFetch[category] = Date()
+        saveToDisk()
     }
 
     /// Update thoughts directly (used after capture polling)
@@ -103,6 +152,7 @@ class MacDataStore: ObservableObject {
             personalThoughts = thoughts
         }
         lastThoughtsFetch[category] = Date()
+        saveToDisk()
     }
 
     /// Remove a task locally
@@ -113,6 +163,7 @@ class MacDataStore: ObservableObject {
         default:
             personalTasks.removeAll { $0.id == id }
         }
+        saveToDisk()
     }
 
     /// Remove a thought locally
@@ -123,6 +174,7 @@ class MacDataStore: ObservableObject {
         default:
             personalThoughts.removeAll { $0.id == id }
         }
+        saveToDisk()
     }
 
     // MARK: - Private Methods
@@ -151,6 +203,7 @@ class MacDataStore: ObservableObject {
             }
 
             lastTasksFetch[category] = Date()
+            saveToDisk()
         } catch {
             print("Error loading tasks for \(category): \(error)")
         }
@@ -170,6 +223,7 @@ class MacDataStore: ObservableObject {
             }
 
             lastThoughtsFetch[category] = Date()
+            saveToDisk()
         } catch {
             print("Error loading thoughts for \(category): \(error)")
         }

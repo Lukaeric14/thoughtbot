@@ -61,7 +61,7 @@ class RecordingWindow: NSObject {
     private let idleWidth: CGFloat = 200
     private let idleHeight: CGFloat = 50  // 37 notch + 13 visible content
     // 2. Semi-expanded: Wider pill for recording/listening
-    private let semiExpandedWidth: CGFloat = 280
+    private let semiExpandedWidth: CGFloat = 340
     private let semiExpandedHeight: CGFloat = 77  // 37 notch + 40 content
     // 3. Fully expanded: Large dropdown panel
     private let expandedWidth: CGFloat = 420
@@ -135,12 +135,12 @@ class RecordingWindow: NSObject {
     }
 
     private func handleMouseEntered() {
-        // Allow hover to expand when:
-        // - Processing state (showing processing pill)
-        // - Idle but processing in background (showing processing pill)
-        let canExpand = viewModel.widgetState == .processing ||
-                       (viewModel.widgetState == .idle && viewModel.isProcessing)
-        guard canExpand else { return }
+        // Allow hover to expand from any state except recording, typing, or already expanded
+        let cannotExpand = viewModel.widgetState == .recording ||
+                          viewModel.widgetState == .typing ||
+                          viewModel.widgetState == .expanded ||
+                          viewModel.isHovering
+        guard !cannotExpand else { return }
         guard !isAnimatingHover else { return }
 
         // Debounce rapid hover changes
@@ -197,21 +197,18 @@ class RecordingWindow: NSObject {
     private func positionWindow(state: WidgetState, animate: Bool) {
         guard let window = window, let screen = NSScreen.main else { return }
 
-        // Hide window in idle state (unless hovering or processing in background)
-        let shouldHide = state == .idle && !viewModel.isHovering && !viewModel.isProcessing
-        if shouldHide {
-            if animate {
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0.15
-                    window.animator().alphaValue = 0
-                }
-            } else {
-                window.alphaValue = 0
+        // In idle state (not hovering, not processing), make window nearly invisible
+        // but still able to receive hover events
+        let shouldBeInvisible = state == .idle && !viewModel.isHovering && !viewModel.isProcessing
+        let targetAlpha: CGFloat = shouldBeInvisible ? 0.01 : 1.0
+
+        if animate {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.15
+                window.animator().alphaValue = targetAlpha
             }
-            return
         } else {
-            // Make sure window is visible
-            window.alphaValue = 1
+            window.alphaValue = targetAlpha
         }
 
         let fullFrame = screen.frame
@@ -233,7 +230,7 @@ class RecordingWindow: NSObject {
                 width = idleWidth
                 height = idleHeight
             }
-        case .recording, .processing:
+        case .recording, .processing, .noted:
             // Semi-expanded pill
             width = semiExpandedWidth
             height = semiExpandedHeight
@@ -265,15 +262,15 @@ class RecordingWindow: NSObject {
         }
 
         // Update mouse tracking - allow mouse events for typing and hovering
-        window.ignoresMouseEvents = state == .recording || state == .processing
+        window.ignoresMouseEvents = state == .recording || state == .processing || state == .noted
     }
 
     func toggleExpanded() {
         if viewModel.widgetState == .expanded || viewModel.isHovering {
-            // Collapse: fade out to hidden
+            // Collapse: fade to nearly invisible (still accepts hover)
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.15
-                self.window?.animator().alphaValue = 0
+                self.window?.animator().alphaValue = 0.01
             } completionHandler: {
                 self.viewModel.widgetState = .idle
                 self.viewModel.isHovering = false
@@ -420,8 +417,16 @@ class RecordingWindow: NSObject {
 
             print("Refreshed cache: \(thoughts.count) thoughts, \(tasks.count) tasks. Result: \(captureResult)")
             viewModel.processingCount = max(0, viewModel.processingCount - 1)
-            viewModel.widgetState = .idle
-            positionWindow(state: .idle, animate: true)
+
+            // Show "Noted" success state briefly
+            viewModel.widgetState = .noted
+            positionWindow(state: .noted, animate: true)
+
+            // After 1.5 seconds, transition to idle
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                self.viewModel.widgetState = .idle
+                self.positionWindow(state: .idle, animate: true)
+            }
 
             // Navigate to correct tab and highlight new item
             switch captureResult {
@@ -465,8 +470,13 @@ class RecordingWindow: NSObject {
         } catch {
             print("Fetch error after capture: \(error)")
             viewModel.processingCount = max(0, viewModel.processingCount - 1)
-            viewModel.widgetState = .idle
-            positionWindow(state: .idle, animate: true)
+            // Still show "Noted" even on error (the capture was still processed)
+            viewModel.widgetState = .noted
+            positionWindow(state: .noted, animate: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                self.viewModel.widgetState = .idle
+                self.positionWindow(state: .idle, animate: true)
+            }
         }
     }
 
@@ -562,6 +572,7 @@ enum WidgetState {
     case idle
     case recording
     case processing
+    case noted      // Success state shown briefly after processing
     case expanded
     case typing
 }
@@ -907,12 +918,12 @@ struct ExpandedDropdownView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 24)
             .padding(.top, 10)
             .padding(.bottom, 10)
 
-            // Tab bar
-            HStack(spacing: 4) {
+            // Tab bar - centered
+            HStack(spacing: 8) {
                 ExpandedTabButton(title: "Thoughts", isSelected: viewModel.selectedTab == 0) {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         viewModel.selectedTab = 0
@@ -928,15 +939,16 @@ struct ExpandedDropdownView: View {
                         viewModel.selectedTab = 2
                     }
                 }
-                Spacer()
             }
-            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 24)
             .padding(.bottom, 8)
 
             // Divider
             Rectangle()
                 .fill(Color.white.opacity(0.1))
                 .frame(height: 1)
+                .padding(.horizontal, 16)
 
             // Content area
             if viewModel.isLoading {
@@ -1116,7 +1128,8 @@ struct ThoughtsListView: View {
                     }
                 }
             }
-            .padding(12)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
         }
     }
 }
@@ -1202,7 +1215,8 @@ struct TasksListView: View {
                     }
                 }
             }
-            .padding(12)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
         }
     }
 }
@@ -1334,6 +1348,9 @@ struct NotchPillView: View {
                     case .processing:
                         // Semi-expanded with processing animation
                         processingView
+                    case .noted:
+                        // Success state with green up arrow
+                        notedView
                     case .expanded, .typing:
                         // These are handled by other views
                         EmptyView()
@@ -1371,13 +1388,14 @@ struct NotchPillView: View {
                     .foregroundColor(.white.opacity(0.6))
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 36)
     }
 
     // MARK: - Recording View (semi-expanded)
     private var recordingView: some View {
         HStack(spacing: 12) {
-            ListeningPixelIndicator()
+            // Wave pixel grid animation on the left
+            WavePixelIndicator()
                 .frame(width: 22, height: 22)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -1391,15 +1409,8 @@ struct NotchPillView: View {
             }
 
             Spacer()
-
-            // Waveform or visual indicator
-            HStack(spacing: 2) {
-                ForEach(0..<5, id: \.self) { i in
-                    WaveformBar(index: i)
-                }
-            }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 36)
     }
 
     // MARK: - Processing View (semi-expanded)
@@ -1426,7 +1437,22 @@ struct NotchPillView: View {
                     .foregroundColor(.white.opacity(0.6))
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 36)
+    }
+
+    // MARK: - Noted View (success state)
+    private var notedView: some View {
+        HStack(spacing: 12) {
+            ArrowUpPixelIndicator()
+                .frame(width: 22, height: 22)
+
+            Text("Noted")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.white)
+
+            Spacer()
+        }
+        .padding(.horizontal, 36)
     }
 }
 
@@ -1687,6 +1713,160 @@ struct BreathePixelIndicator: View {
     private func startAnimation() {
         Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { _ in
             withAnimation(.easeOut(duration: 0.12)) {
+                frame += 1
+            }
+        }
+    }
+}
+
+// MARK: - Wave Pixel Indicator (for listening/recording state)
+// Diagonal wave from bottom-left to top-right corner, with trailing opacity
+struct WavePixelIndicator: View {
+    @State private var frame: Int = 0
+
+    // Warm magenta/pink color for listening
+    private let waveColor = Color(red: 1.0, green: 0.08, blue: 0.8)  // Hot pink/magenta
+
+    // Diagonal index for each cell (sum of row + col, but inverted for bottom-left start)
+    // Grid positions and their diagonal index (for wave from bottom-left to top-right):
+    // (0,0)=2  (0,1)=3  (0,2)=4
+    // (1,0)=1  (1,1)=2  (1,2)=3
+    // (2,0)=0  (2,1)=1  (2,2)=2
+    private func diagonalIndex(row: Int, col: Int) -> Int {
+        return (2 - row) + col
+    }
+
+    // Wave animation: diagonal sweep with trailing glow
+    // 7 frames total (5 diagonals + 2 pause frames)
+    private func isOn(row: Int, col: Int) -> Double {
+        let diagIdx = diagonalIndex(row: row, col: col)
+        let phase = frame % 7
+
+        // Calculate distance from current wave front
+        let distance = diagIdx - phase
+
+        switch distance {
+        case 0:  // Wave front (brightest)
+            return 1.0
+        case -1:  // Just passed (trailing)
+            return 0.6
+        case -2:  // Further behind (fading)
+            return 0.25
+        case 1:  // About to hit (leading glow)
+            return 0.3
+        default:
+            return 0.0
+        }
+    }
+
+    var body: some View {
+        let pixelStates = (0..<3).map { row in
+            (0..<3).map { col in isOn(row: row, col: col) }
+        }
+        let colors = (0..<3).map { _ in
+            (0..<3).map { _ in waveColor }
+        }
+
+        PixelGridIndicator(pixelStates: pixelStates, colors: colors)
+            .onAppear {
+                startAnimation()
+            }
+    }
+
+    private func startAnimation() {
+        // Slower animation - 250ms per frame
+        Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { _ in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                frame += 1
+            }
+        }
+    }
+}
+
+// MARK: - Arrow Up Pixel Indicator (for success/noted state)
+// Upward arrow animation - sweeps from bottom to top
+// Arrow shape:
+//   ●      <- top center (tip)
+// ● ● ●   <- middle row (arrow head)
+//   ●      <- bottom center (stem)
+struct ArrowUpPixelIndicator: View {
+    @State private var frame: Int = 0
+
+    // Bright green for success
+    private let arrowColor = Color(red: 0.3, green: 0.85, blue: 0.4)
+
+    // Arrow pixels: center column + middle row wings
+    private func isArrowPixel(row: Int, col: Int) -> Bool {
+        return col == 1 || (row == 1 && (col == 0 || col == 2))
+    }
+
+    // Animation: arrow "rises" from bottom to top with trailing glow
+    // 8 frames total
+    private func isOn(row: Int, col: Int) -> Double {
+        if !isArrowPixel(row: row, col: col) { return 0.0 }
+
+        let phase = frame % 8
+
+        switch phase {
+        case 0:  // Bottom stem starts
+            if row == 2 && col == 1 { return 1.0 }
+            return 0.0
+        case 1:  // Bottom bright, middle row starting
+            if row == 2 && col == 1 { return 0.8 }
+            if row == 1 { return 0.4 }
+            return 0.0
+        case 2:  // Middle row bright, bottom fading, top starting
+            if row == 1 { return 1.0 }
+            if row == 2 && col == 1 { return 0.4 }
+            if row == 0 && col == 1 { return 0.3 }
+            return 0.0
+        case 3:  // Top bright, middle fading
+            if row == 0 && col == 1 { return 1.0 }
+            if row == 1 { return 0.6 }
+            if row == 2 && col == 1 { return 0.2 }
+            return 0.0
+        case 4:  // Full arrow visible, top brightest
+            if row == 0 && col == 1 { return 1.0 }
+            if row == 1 { return 0.8 }
+            if row == 2 && col == 1 { return 0.5 }
+            return 0.0
+        case 5:  // Full arrow pulse
+            if row == 0 && col == 1 { return 0.9 }
+            if row == 1 { return 0.9 }
+            if row == 2 && col == 1 { return 0.7 }
+            return 0.0
+        case 6:  // Fading out from bottom
+            if row == 0 && col == 1 { return 0.7 }
+            if row == 1 { return 0.5 }
+            if row == 2 && col == 1 { return 0.2 }
+            return 0.0
+        case 7:  // Almost off, pause
+            if row == 0 && col == 1 { return 0.3 }
+            if row == 1 && col == 1 { return 0.2 }
+            return 0.0
+        default:
+            return 0.0
+        }
+    }
+
+    var body: some View {
+        let pixelStates = (0..<3).map { row in
+            (0..<3).map { col in isOn(row: row, col: col) }
+        }
+        let colors = (0..<3).map { _ in
+            (0..<3).map { _ in arrowColor }
+        }
+
+        PixelGridIndicator(pixelStates: pixelStates, colors: colors)
+            .onAppear {
+                startAnimation()
+            }
+    }
+
+    private func startAnimation() {
+        // ~200ms per frame for smooth upward motion
+        Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { _ in
+            withAnimation(.easeOut(duration: 0.15)) {
                 frame += 1
             }
         }

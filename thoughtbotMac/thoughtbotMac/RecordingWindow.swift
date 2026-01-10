@@ -52,13 +52,23 @@ class RecordingWindow: NSObject {
     private let hoverDebounceInterval: TimeInterval = 0.35
     private var isAnimatingHover = false
 
-    // Size constants
-    private let idleWidth: CGFloat = 12
-    private let idleHeight: CGFloat = 48
-    private let activeWidth: CGFloat = 16
-    private let activeHeight: CGFloat = 56
-    private let expandedWidth: CGFloat = 300
-    private let expandedHeight: CGFloat = 480
+    // Notch safe area - content should be positioned below this
+    private let notchHeight: CGFloat = 37
+
+    // Size constants - NotchNook style (4 states)
+    // Heights INCLUDE notch area - content will be padded down
+    // 1. Idle: Small notch-like rectangle (extends into notch)
+    private let idleWidth: CGFloat = 200
+    private let idleHeight: CGFloat = 50  // 37 notch + 13 visible content
+    // 2. Semi-expanded: Wider pill for recording/listening
+    private let semiExpandedWidth: CGFloat = 280
+    private let semiExpandedHeight: CGFloat = 77  // 37 notch + 40 content
+    // 3. Fully expanded: Large dropdown panel
+    private let expandedWidth: CGFloat = 420
+    private let expandedHeight: CGFloat = 377  // 37 notch + 340 content
+    // 4. Typing: Medium pill with input
+    private let typingWidth: CGFloat = 320
+    private let typingHeight: CGFloat = 81  // 37 notch + 44 content
 
     override init() {
         super.init()
@@ -117,15 +127,20 @@ class RecordingWindow: NSObject {
             self?.handleMouseExited()
         }
 
-        // Position on right side of screen
+        // Position window (will be hidden in idle state)
         positionWindow(state: .idle, animate: false)
 
-        // Show with idle state
+        // Window starts hidden (idle state), orderFront so it's ready when needed
         window.orderFrontRegardless()
     }
 
     private func handleMouseEntered() {
-        guard viewModel.widgetState == .idle else { return }
+        // Allow hover to expand when:
+        // - Processing state (showing processing pill)
+        // - Idle but processing in background (showing processing pill)
+        let canExpand = viewModel.widgetState == .processing ||
+                       (viewModel.widgetState == .idle && viewModel.isProcessing)
+        guard canExpand else { return }
         guard !isAnimatingHover else { return }
 
         // Debounce rapid hover changes
@@ -134,26 +149,16 @@ class RecordingWindow: NSObject {
         lastHoverChangeTime = now
         isAnimatingHover = true
 
-        // Fade out, resize, then fade in with new content
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.1
-            self.window?.animator().alphaValue = 0
-        } completionHandler: {
-            self.viewModel.isHovering = true
-            self.positionWindow(state: .expanded, animate: false)
-            self.viewModel.fetchData()
-
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.15
-                self.window?.animator().alphaValue = 1
-            } completionHandler: {
-                self.isAnimatingHover = false
-            }
-        }
+        // Expand to show full dropdown
+        viewModel.isHovering = true
+        positionWindow(state: .expanded, animate: true)
+        viewModel.fetchData()
+        isAnimatingHover = false
     }
 
     private func handleMouseExited() {
-        guard viewModel.widgetState != .expanded else { return }
+        // Handle mouse exit when expanded via hover
+        guard viewModel.isHovering else { return }
         guard !isAnimatingHover else { return }
 
         // Check if mouse is actually outside the window frame
@@ -170,58 +175,82 @@ class RecordingWindow: NSObject {
         // Debounce rapid hover changes
         let now = Date()
         guard now.timeIntervalSince(lastHoverChangeTime) >= hoverDebounceInterval else { return }
+        lastHoverChangeTime = now
+        isAnimatingHover = true
 
-        if viewModel.widgetState == .idle && viewModel.isHovering {
-            lastHoverChangeTime = now
-            isAnimatingHover = true
+        // Collapse back to previous state
+        viewModel.isHovering = false
 
-            // Fade out, resize, then fade in
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.1
-                self.window?.animator().alphaValue = 0
-            } completionHandler: {
-                self.viewModel.isHovering = false
-                self.positionWindow(state: .idle, animate: false)
-
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0.15
-                    self.window?.animator().alphaValue = 1
-                } completionHandler: {
-                    self.isAnimatingHover = false
-                }
-            }
+        // Determine what state to return to
+        if viewModel.isProcessing {
+            // Return to processing pill
+            viewModel.widgetState = viewModel.processingCount > 0 ? .processing : .idle
+            positionWindow(state: viewModel.widgetState, animate: true)
+        } else {
+            // Return to hidden idle
+            viewModel.widgetState = .idle
+            positionWindow(state: .idle, animate: true)
         }
+        isAnimatingHover = false
     }
-
-    // Size for typing input
-    private let typingWidth: CGFloat = 320
-    private let typingHeight: CGFloat = 56
 
     private func positionWindow(state: WidgetState, animate: Bool) {
         guard let window = window, let screen = NSScreen.main else { return }
 
-        let screenFrame = screen.frame
+        // Hide window in idle state (unless hovering or processing in background)
+        let shouldHide = state == .idle && !viewModel.isHovering && !viewModel.isProcessing
+        if shouldHide {
+            if animate {
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.15
+                    window.animator().alphaValue = 0
+                }
+            } else {
+                window.alphaValue = 0
+            }
+            return
+        } else {
+            // Make sure window is visible
+            window.alphaValue = 1
+        }
+
+        let fullFrame = screen.frame
         let width: CGFloat
         let height: CGFloat
 
         switch state {
         case .idle:
-            width = viewModel.isHovering ? expandedWidth : idleWidth
-            height = viewModel.isHovering ? expandedHeight : idleHeight
+            if viewModel.isHovering {
+                // Fully expanded dropdown
+                width = expandedWidth
+                height = expandedHeight
+            } else if viewModel.isProcessing {
+                // Show semi-expanded when processing in background
+                width = semiExpandedWidth
+                height = semiExpandedHeight
+            } else {
+                // Hidden (handled above, but fallback)
+                width = idleWidth
+                height = idleHeight
+            }
         case .recording, .processing:
-            width = activeWidth
-            height = activeHeight
+            // Semi-expanded pill
+            width = semiExpandedWidth
+            height = semiExpandedHeight
         case .expanded:
+            // Fully expanded dropdown
             width = expandedWidth
             height = expandedHeight
         case .typing:
+            // Medium pill with input
             width = typingWidth
             height = typingHeight
         }
 
-        // Position on right edge, vertically centered
-        let x = screenFrame.maxX - width - 12
-        let y = screenFrame.midY - height / 2
+        // Position at top center, touching the bezel (no gap)
+        let x = fullFrame.midX - width / 2
+        // Window touches the very top of the screen - merges with notch
+        let y = fullFrame.maxY - height
 
         let newFrame = NSRect(x: x, y: y, width: width, height: height)
 
@@ -235,40 +264,32 @@ class RecordingWindow: NSObject {
             window.setFrame(newFrame, display: true)
         }
 
-        // Update mouse tracking - allow mouse events for typing
+        // Update mouse tracking - allow mouse events for typing and hovering
         window.ignoresMouseEvents = state == .recording || state == .processing
     }
 
     func toggleExpanded() {
-        if viewModel.widgetState == .expanded {
-            // Collapse: fade out, resize, fade in
+        if viewModel.widgetState == .expanded || viewModel.isHovering {
+            // Collapse: fade out to hidden
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.1
+                context.duration = 0.15
                 self.window?.animator().alphaValue = 0
             } completionHandler: {
                 self.viewModel.widgetState = .idle
                 self.viewModel.isHovering = false
                 self.positionWindow(state: .idle, animate: false)
-
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0.15
-                    self.window?.animator().alphaValue = 1
-                }
+                // Window stays hidden in idle
             }
         } else if viewModel.widgetState == .idle {
-            // Expand: fade out, resize, fade in
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.1
-                self.window?.animator().alphaValue = 0
-            } completionHandler: {
-                self.viewModel.widgetState = .expanded
-                self.positionWindow(state: .expanded, animate: false)
-                self.viewModel.fetchData()
+            // Expand: show window with expanded content
+            self.viewModel.widgetState = .expanded
+            self.viewModel.isHovering = true
+            self.positionWindow(state: .expanded, animate: false)
+            self.viewModel.fetchData()
 
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0.15
-                    self.window?.animator().alphaValue = 1
-                }
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.2
+                self.window?.animator().alphaValue = 1
             }
         }
     }
@@ -285,7 +306,8 @@ class RecordingWindow: NSObject {
         viewModel.widgetState = .recording
         viewModel.isHovering = false
 
-        // Grow window
+        // Show and grow window
+        window.alphaValue = 1
         positionWindow(state: .recording, animate: true)
         window.orderFrontRegardless()
 
@@ -302,6 +324,10 @@ class RecordingWindow: NSObject {
         print("stopAndSend: setting processing state, processingCount will be \(viewModel.processingCount + 1)")
         viewModel.widgetState = .processing
         viewModel.processingCount += 1
+
+        // Ensure window is visible for processing
+        window?.alphaValue = 1
+        positionWindow(state: .processing, animate: true)
 
         if let audioURL = recorder.stopRecording() {
             print("stopAndSend: got audio URL, starting upload")
@@ -446,7 +472,9 @@ class RecordingWindow: NSObject {
 
     func showIdle() {
         viewModel.widgetState = .idle
+        viewModel.isHovering = false
         guard let window = window else { return }
+        // positionWindow handles visibility (hidden unless processing)
         positionWindow(state: .idle, animate: true)
         window.orderFrontRegardless()
     }
@@ -463,6 +491,8 @@ class RecordingWindow: NSObject {
         viewModel.widgetState = .typing
         viewModel.isHovering = false
 
+        // Show window and position
+        window.alphaValue = 1
         positionWindow(state: .typing, animate: true)
         window.orderFrontRegardless()
 
@@ -488,7 +518,8 @@ class RecordingWindow: NSObject {
             appDelegate.resetTypingState()
         }
 
-        // Resize to processing state
+        // Ensure window is visible and resize to processing state
+        window?.alphaValue = 1
         positionWindow(state: .processing, animate: true)
 
         Task {
@@ -647,6 +678,101 @@ class WidgetViewModel: ObservableObject {
     }
 }
 
+// MARK: - Notch Safe Area Constant
+// Content should be positioned below this height to avoid the physical notch
+private let notchSafeAreaHeight: CGFloat = 37
+
+// MARK: - Notch Tab Shape (concave fillet top corners)
+// Creates a notch shape like Dynamic Island / MacBook notch
+// Has "ears" at top that are wider, transitioning to narrower body via concave curves
+// The concave curves bulge OUTWARD toward the top corners
+struct NotchTabShape: Shape {
+    var cornerRadius: CGFloat = 18   // Bottom corners (convex/normal rounded)
+    var concaveRadius: CGFloat = 12  // Size of concave fillet curves
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+
+        let w = rect.width
+        let h = rect.height
+        let cr = cornerRadius    // bottom corners
+        let r = concaveRadius    // concave fillet radius
+
+        // Shape visualization:
+        //
+        // (0,0)__________________(w,0)   <- top edge (full width ears)
+        //  |                        |    <- ears extend down
+        //  |   ╮                ╭   |    <- concave curves (bulge OUTWARD)
+        //      |                |        <- narrower body
+        //      |                |
+        //       ╲______________╱         <- rounded bottom corners
+        //
+        // Ears are at x=0 to x=r (left) and x=w-r to x=w (right)
+        // Body is from x=r to x=w-r
+        // Concave curves connect ears to body, bulging toward top corners
+
+        // Start at top-left corner (where left arc meets top)
+        path.move(to: CGPoint(x: 0, y: 0))
+
+        // Top edge (full width)
+        path.addLine(to: CGPoint(x: w, y: 0))
+
+        // Right concave fillet: from (w, 0) curving to (w - r, r)
+        // Center at (w, r) - curves start immediately from top
+        path.addArc(
+            center: CGPoint(x: w, y: r),
+            radius: r,
+            startAngle: .degrees(-90),  // above center = (w, 0)
+            endAngle: .degrees(180),    // left of center = (w - r, r)
+            clockwise: true             // short arc, bulges outward
+        )
+        // Now at (w - r, r)
+
+        // Body right edge going down
+        path.addLine(to: CGPoint(x: w - r, y: h - cr))
+
+        // Bottom-right convex corner
+        path.addArc(
+            center: CGPoint(x: w - r - cr, y: h - cr),
+            radius: cr,
+            startAngle: .degrees(0),
+            endAngle: .degrees(90),
+            clockwise: false
+        )
+        // Now at (w - r - cr, h)
+
+        // Bottom edge
+        path.addLine(to: CGPoint(x: r + cr, y: h))
+
+        // Bottom-left convex corner
+        path.addArc(
+            center: CGPoint(x: r + cr, y: h - cr),
+            radius: cr,
+            startAngle: .degrees(90),
+            endAngle: .degrees(180),
+            clockwise: false
+        )
+        // Now at (r, h - cr)
+
+        // Body left edge going up
+        path.addLine(to: CGPoint(x: r, y: r))
+
+        // Left concave fillet: from (r, r) curving to (0, 0)
+        // Center at (0, r) - curves end at top
+        path.addArc(
+            center: CGPoint(x: 0, y: r),
+            radius: r,
+            startAngle: .degrees(0),    // right of center = (r, r)
+            endAngle: .degrees(-90),    // above center = (0, 0)
+            clockwise: true             // short arc, bulges outward
+        )
+        // Now at (0, 0) - back to start
+
+        path.closeSubpath()
+        return path
+    }
+}
+
 // MARK: - Main Widget View
 struct WidgetView: View {
     @ObservedObject var viewModel: WidgetViewModel
@@ -658,63 +784,78 @@ struct WidgetView: View {
         if viewModel.widgetState == .typing {
             TypingInputView(viewModel: viewModel, onSubmit: onSubmit, onCancel: onCancel)
         } else if viewModel.showExpanded {
-            ExpandedView(viewModel: viewModel)
+            ExpandedDropdownView(viewModel: viewModel)
+        } else if viewModel.widgetState == .idle && viewModel.isProcessing {
+            // Background processing - show processing pill
+            NotchPillView(viewModel: viewModel, forceProcessing: true)
         } else {
-            StatusIndicatorView(viewModel: viewModel)
+            NotchPillView(viewModel: viewModel)
         }
     }
 }
 
-// MARK: - Typing Input View
+// MARK: - Typing Input View (NotchNook style)
 struct TypingInputView: View {
     @ObservedObject var viewModel: WidgetViewModel
     var onSubmit: (() -> Void)?
     var onCancel: (() -> Void)?
     @FocusState private var isFocused: Bool
 
+    private let cornerRadius: CGFloat = 18
+
     var body: some View {
-        HStack(spacing: 12) {
-            // Keyboard icon
-            Image(systemName: "keyboard")
-                .font(.system(size: 16))
-                .foregroundColor(.white.opacity(0.5))
+        VStack(spacing: 0) {
+            // Notch safe area spacer
+            Spacer()
+                .frame(height: notchSafeAreaHeight)
 
-            // Text field
-            TextField("Type a thought or task...", text: $viewModel.typingText)
-                .textFieldStyle(.plain)
-                .font(.system(size: 14))
-                .foregroundColor(.white)
-                .focused($isFocused)
-                .onSubmit {
-                    onSubmit?()
-                }
-                .onExitCommand {
-                    onCancel?()
-                }
+            // Content below notch
+            HStack(spacing: 12) {
+                // Pixel grid icon
+                IdlePixelGrid()
+                    .frame(width: 18, height: 18)
 
-            // Submit button
-            if !viewModel.typingText.isEmpty {
-                Button(action: { onSubmit?() }) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(.accentColor)
+                // Text field
+                TextField("Type a thought or task...", text: $viewModel.typingText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundColor(.white)
+                    .focused($isFocused)
+                    .onSubmit {
+                        onSubmit?()
+                    }
+                    .onExitCommand {
+                        onCancel?()
+                    }
+
+                Spacer()
+
+                // Submit button
+                if !viewModel.typingText.isEmpty {
+                    Button(action: { onSubmit?() }) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.white)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    // Keyboard shortcut hint
+                    Text("⌘K")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.3))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.white.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
                 }
-                .buttonStyle(.plain)
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.black.opacity(0.9))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.white.opacity(0.15), lineWidth: 1)
-                )
-        )
+        .background(Color.black)
+        .clipShape(NotchTabShape(cornerRadius: cornerRadius, concaveRadius: 12))
         .onAppear {
-            // Auto-focus when view appears
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 isFocused = true
             }
@@ -722,7 +863,132 @@ struct TypingInputView: View {
     }
 }
 
-// MARK: - Expanded View with Tabs
+// MARK: - Expanded Dropdown View (NotchNook style)
+struct ExpandedDropdownView: View {
+    @ObservedObject var viewModel: WidgetViewModel
+
+    private let cornerRadius: CGFloat = 18
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Notch safe area spacer
+            Spacer()
+                .frame(height: notchSafeAreaHeight)
+
+            // Header row (below notch)
+            HStack(spacing: 12) {
+                // Left: Pixel grid + name
+                HStack(spacing: 10) {
+                    if viewModel.isProcessing {
+                        BreathePixelIndicator()
+                            .frame(width: 18, height: 18)
+                    } else {
+                        IdlePixelGrid()
+                            .frame(width: 18, height: 18)
+                    }
+
+                    Text("thoughtbot")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+
+                Spacer()
+
+                // Right: Category toggle + settings
+                HStack(spacing: 12) {
+                    Button(action: { viewModel.toggleCategory() }) {
+                        Image(systemName: viewModel.selectedCategory == "personal" ? "house.fill" : "building.2.fill")
+                            .font(.system(size: 13))
+                            .foregroundColor(.white.opacity(0.6))
+                            .frame(width: 32, height: 32)
+                            .background(Color.white.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 10)
+
+            // Tab bar
+            HStack(spacing: 4) {
+                ExpandedTabButton(title: "Thoughts", isSelected: viewModel.selectedTab == 0) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        viewModel.selectedTab = 0
+                    }
+                }
+                ExpandedTabButton(title: "Tasks", isSelected: viewModel.selectedTab == 1) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        viewModel.selectedTab = 1
+                    }
+                }
+                ExpandedTabButton(title: "Actions", isSelected: viewModel.selectedTab == 2) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        viewModel.selectedTab = 2
+                    }
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+
+            // Divider
+            Rectangle()
+                .fill(Color.white.opacity(0.1))
+                .frame(height: 1)
+
+            // Content area
+            if viewModel.isLoading {
+                Spacer()
+                ProgressView()
+                    .scaleEffect(0.8)
+                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                Spacer()
+            } else {
+                Group {
+                    switch viewModel.selectedTab {
+                    case 0:
+                        ThoughtsListView(viewModel: viewModel)
+                    case 1:
+                        TasksListView(viewModel: viewModel)
+                    case 2:
+                        ActionsListView()
+                    default:
+                        ThoughtsListView(viewModel: viewModel)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black)
+        .clipShape(NotchTabShape(cornerRadius: cornerRadius, concaveRadius: 12))
+    }
+}
+
+// MARK: - Expanded Tab Button
+struct ExpandedTabButton: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                .foregroundColor(isSelected ? .white : .white.opacity(0.5))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(isSelected ? Color.white.opacity(0.15) : Color.clear)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Legacy Expanded View (kept for reference)
 struct ExpandedView: View {
     @ObservedObject var viewModel: WidgetViewModel
 
@@ -1038,61 +1304,168 @@ struct EmptyStateView: View {
     }
 }
 
-// MARK: - Status Indicator (Collapsed)
-struct StatusIndicatorView: View {
+// MARK: - Notch View (NotchNook style)
+struct NotchPillView: View {
     @ObservedObject var viewModel: WidgetViewModel
-    @State private var rotation: Double = 0
+    var forceProcessing: Bool = false
 
-    private var backgroundOpacity: Double {
-        viewModel.widgetState == .idle ? 0.4 : 0.85
-    }
+    // Corner radius that matches notch aesthetic
+    private let cornerRadius: CGFloat = 18
 
     var body: some View {
-        ZStack {
-            // Dark capsule background - lighter when idle
-            Capsule()
-                .fill(Color.black.opacity(backgroundOpacity))
-                .overlay(
-                    Capsule()
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                )
-                .animation(.easeInOut(duration: 0.3), value: viewModel.widgetState)
+        VStack(spacing: 0) {
+            // Notch safe area spacer
+            Spacer()
+                .frame(height: notchSafeAreaHeight)
 
-            // Content based on state
-            switch viewModel.widgetState {
-            case .idle:
-                if viewModel.isProcessing {
-                    // Show processing indicator in idle with count
-                    VStack(spacing: 2) {
-                        // Spinning ring
-                        Circle()
-                            .trim(from: 0, to: 0.7)
-                            .stroke(Color.accentColor, lineWidth: 1.5)
-                            .frame(width: 8, height: 8)
-                            .rotationEffect(.degrees(rotation))
-                            .onAppear {
-                                withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
-                                    rotation = 360
-                                }
-                            }
-
-                        if viewModel.processingCount > 0 {
-                            Text("\(viewModel.processingCount)")
-                                .font(.system(size: 6, weight: .bold))
-                                .foregroundColor(.white)
-                        }
-                    }
+            // Content below notch
+            Group {
+                if forceProcessing {
+                    // Background processing indicator
+                    backgroundProcessingView
                 } else {
-                    IdleIndicator()
+                    switch viewModel.widgetState {
+                    case .idle:
+                        // Idle is hidden, but this is fallback
+                        EmptyView()
+                    case .recording:
+                        // Semi-expanded with listening animation
+                        recordingView
+                    case .processing:
+                        // Semi-expanded with processing animation
+                        processingView
+                    case .expanded, .typing:
+                        // These are handled by other views
+                        EmptyView()
+                    }
                 }
-            case .recording:
-                RecordingIndicator()
-            case .processing:
-                MacProcessingIndicator()
-            case .expanded, .typing:
-                EmptyView()
+            }
+            .frame(maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black)
+        .clipShape(NotchTabShape(cornerRadius: cornerRadius, concaveRadius: 12))
+    }
+
+    // MARK: - Background Processing View (shown when idle but processing)
+    private var backgroundProcessingView: some View {
+        HStack(spacing: 12) {
+            BreathePixelIndicator()
+                .frame(width: 22, height: 22)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("thoughtbot")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white)
+
+                Text("Processing...")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.5))
+            }
+
+            Spacer()
+
+            if viewModel.processingCount > 1 {
+                Text("\(viewModel.processingCount)")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.6))
             }
         }
+        .padding(.horizontal, 16)
+    }
+
+    // MARK: - Recording View (semi-expanded)
+    private var recordingView: some View {
+        HStack(spacing: 12) {
+            ListeningPixelIndicator()
+                .frame(width: 22, height: 22)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("thoughtbot")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white)
+
+                Text("Listening...")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.5))
+            }
+
+            Spacer()
+
+            // Waveform or visual indicator
+            HStack(spacing: 2) {
+                ForEach(0..<5, id: \.self) { i in
+                    WaveformBar(index: i)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    // MARK: - Processing View (semi-expanded)
+    private var processingView: some View {
+        HStack(spacing: 12) {
+            OrbitPixelIndicator()
+                .frame(width: 22, height: 22)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("thoughtbot")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white)
+
+                Text("Processing...")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.5))
+            }
+
+            Spacer()
+
+            if viewModel.processingCount > 1 {
+                Text("\(viewModel.processingCount)")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.6))
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+}
+
+// MARK: - Waveform Bar (for recording state)
+struct WaveformBar: View {
+    let index: Int
+    @State private var height: CGFloat = 4
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 1)
+            .fill(Color.white.opacity(0.6))
+            .frame(width: 3, height: height)
+            .onAppear {
+                withAnimation(
+                    .easeInOut(duration: 0.3)
+                    .repeatForever(autoreverses: true)
+                    .delay(Double(index) * 0.08)
+                ) {
+                    height = CGFloat.random(in: 8...16)
+                }
+            }
+    }
+}
+
+// MARK: - Idle Pixel Grid (static 3x3 with subtle glow)
+struct IdlePixelGrid: View {
+    private let dotColor = Color(red: 0.3, green: 0.7, blue: 0.9)  // Soft cyan
+
+    var body: some View {
+        let pixelStates: [[Double]] = [
+            [0.6, 0.8, 0.6],
+            [0.8, 1.0, 0.8],
+            [0.6, 0.8, 0.6]
+        ]
+        let colors = (0..<3).map { _ in
+            (0..<3).map { _ in dotColor }
+        }
+
+        PixelGridIndicator(pixelStates: pixelStates, colors: colors)
     }
 }
 
@@ -1103,7 +1476,7 @@ struct IdleIndicator: View {
     var body: some View {
         Capsule()
             .fill(Color.white.opacity(opacity))
-            .frame(width: 3, height: 16)
+            .frame(width: 24, height: 4)  // Horizontal pill
             .animation(.easeInOut(duration: 2).repeatForever(autoreverses: true), value: opacity)
             .onAppear {
                 opacity = 0.25
@@ -1111,7 +1484,216 @@ struct IdleIndicator: View {
     }
 }
 
-// MARK: - Recording State (Sound Waves)
+// MARK: - Pixel Grid Base Component
+struct PixelGridIndicator: View {
+    let pixelStates: [[Double]]  // 3x3 grid of "on" values (0-1)
+    let colors: [[Color]]        // 3x3 grid of colors for ON state
+    let pixelSize: CGFloat = 4
+    let spacing: CGFloat = 1.5
+
+    // Off dots are visible but dim
+    private let offColor = Color.white.opacity(0.15)
+
+    var body: some View {
+        VStack(spacing: spacing) {
+            ForEach(0..<3, id: \.self) { row in
+                HStack(spacing: spacing) {
+                    ForEach(0..<3, id: \.self) { col in
+                        let isOn = pixelStates[row][col] > 0.5
+                        let intensity = pixelStates[row][col]
+
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(isOn ? colors[row][col] : offColor)
+                            .frame(width: pixelSize, height: pixelSize)
+                            .scaleEffect(isOn ? 1.0 + (intensity * 0.15) : 1.0)
+                            .shadow(
+                                color: isOn ? colors[row][col].opacity(0.8) : .clear,
+                                radius: isOn ? 3 : 0
+                            )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Recording State: Pulse Ripple (Listening)
+// Center pixel pulses, then ripples outward like sound waves - warm magenta/pink
+struct ListeningPixelIndicator: View {
+    @State private var phase: Int = 0
+
+    // Vibrant warm colors like Dot Matrix Animator
+    private let pulseColor = Color(red: 1.0, green: 0.08, blue: 0.8)  // Hot pink/magenta
+
+    // Animation phases - ripple from center outward
+    private func opacityFor(row: Int, col: Int) -> Double {
+        let ring = ringFor(row: row, col: col)
+        let activeRing = phase % 3
+
+        if ring == activeRing {
+            return 1.0
+        } else if ring == (activeRing + 2) % 3 {
+            return 0.7  // Trailing ring
+        }
+        return 0.0
+    }
+
+    private func ringFor(row: Int, col: Int) -> Int {
+        // Center = ring 0
+        if row == 1 && col == 1 { return 0 }
+        // Edges (cross pattern) = ring 1
+        if (row == 0 && col == 1) || (row == 2 && col == 1) ||
+           (row == 1 && col == 0) || (row == 1 && col == 2) { return 1 }
+        // Corners = ring 2
+        return 2
+    }
+
+    var body: some View {
+        let pixelStates = (0..<3).map { row in
+            (0..<3).map { col in opacityFor(row: row, col: col) }
+        }
+        let colors = (0..<3).map { _ in
+            (0..<3).map { _ in pulseColor }
+        }
+
+        PixelGridIndicator(pixelStates: pixelStates, colors: colors)
+            .onAppear {
+                startAnimation()
+            }
+    }
+
+    private func startAnimation() {
+        Timer.scheduledTimer(withTimeInterval: 0.18, repeats: true) { _ in
+            withAnimation(.easeOut(duration: 0.15)) {
+                phase += 1
+            }
+        }
+    }
+}
+
+// MARK: - Processing State 1: Clockwise Spinner
+// Like the Dot Matrix Animator "Clockwise" preset - dots light up around the edge
+struct OrbitPixelIndicator: View {
+    @State private var frame: Int = 0
+
+    // Cyan/teal color like the Dot Matrix Animator
+    private let dotColor = Color(red: 0.2, green: 0.9, blue: 1.0)  // Bright cyan
+
+    // Clockwise path around the edge (8 positions)
+    // Frame 0: top-left, Frame 1: top-center, Frame 2: top-right, etc.
+    private let clockwisePath: [(Int, Int)] = [
+        (0, 0), (0, 1), (0, 2),  // Top row: left to right
+        (1, 2),                   // Right middle
+        (2, 2), (2, 1), (2, 0),  // Bottom row: right to left
+        (1, 0)                    // Left middle
+    ]
+
+    private func isOn(row: Int, col: Int) -> Double {
+        // Center is always off
+        if row == 1 && col == 1 { return 0.0 }
+
+        guard let idx = clockwisePath.firstIndex(where: { $0 == (row, col) }) else { return 0.0 }
+
+        let currentFrame = frame % 8
+        let distance = (idx - currentFrame + 8) % 8
+
+        // Current dot and 2 trailing dots are lit (creates comet effect)
+        switch distance {
+        case 0: return 1.0      // Head (brightest)
+        case 7: return 0.8      // Trail 1
+        case 6: return 0.5      // Trail 2
+        default: return 0.0
+        }
+    }
+
+    var body: some View {
+        let pixelStates = (0..<3).map { row in
+            (0..<3).map { col in isOn(row: row, col: col) }
+        }
+        let colors = (0..<3).map { _ in
+            (0..<3).map { _ in dotColor }
+        }
+
+        PixelGridIndicator(pixelStates: pixelStates, colors: colors)
+            .onAppear {
+                startAnimation()
+            }
+    }
+
+    private func startAnimation() {
+        Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+            withAnimation(.easeOut(duration: 0.08)) {
+                frame += 1
+            }
+        }
+    }
+}
+
+// MARK: - Processing State 2: Pulse (center-outward burst)
+// Like the Dot Matrix Animator "Pulse" preset - center lights up, expands to cross, then corners
+struct BreathePixelIndicator: View {
+    @State private var frame: Int = 0
+
+    // Purple/violet color for processing
+    private let dotColor = Color(red: 0.7, green: 0.3, blue: 1.0)  // Bright purple
+
+    // Pulse pattern frames (6 frames total):
+    // Frame 0: Center only
+    // Frame 1: Center + cross (edges)
+    // Frame 2: All 9 dots
+    // Frame 3: Cross + corners (no center)
+    // Frame 4: Corners only
+    // Frame 5: All off (pause)
+    private func isOn(row: Int, col: Int) -> Double {
+        let currentFrame = frame % 6
+        let isCenter = row == 1 && col == 1
+        let isEdge = (row == 0 && col == 1) || (row == 2 && col == 1) ||
+                     (row == 1 && col == 0) || (row == 1 && col == 2)
+        let isCorner = (row == 0 || row == 2) && (col == 0 || col == 2)
+
+        switch currentFrame {
+        case 0:  // Center only
+            return isCenter ? 1.0 : 0.0
+        case 1:  // Center + cross
+            return (isCenter || isEdge) ? 1.0 : 0.0
+        case 2:  // All dots
+            return 1.0
+        case 3:  // Cross + corners (fading center)
+            if isCenter { return 0.3 }
+            return (isEdge || isCorner) ? 1.0 : 0.0
+        case 4:  // Corners only
+            return isCorner ? 0.8 : 0.0
+        case 5:  // Pause (all dim)
+            return 0.0
+        default:
+            return 0.0
+        }
+    }
+
+    var body: some View {
+        let pixelStates = (0..<3).map { row in
+            (0..<3).map { col in isOn(row: row, col: col) }
+        }
+        let colors = (0..<3).map { _ in
+            (0..<3).map { _ in dotColor }
+        }
+
+        PixelGridIndicator(pixelStates: pixelStates, colors: colors)
+            .onAppear {
+                startAnimation()
+            }
+    }
+
+    private func startAnimation() {
+        Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { _ in
+            withAnimation(.easeOut(duration: 0.12)) {
+                frame += 1
+            }
+        }
+    }
+}
+
+// MARK: - Legacy Recording Indicator (kept for reference)
 struct RecordingIndicator: View {
     let barCount = 5
 
@@ -1144,7 +1726,7 @@ struct SoundWaveBar: View {
     }
 }
 
-// MARK: - Processing State (Loading Dots)
+// MARK: - Legacy Processing Indicator (kept for reference)
 struct MacProcessingIndicator: View {
     let dotCount = 5
 
@@ -1179,24 +1761,13 @@ struct ProcessingDot: View {
 
 // MARK: - Expanded Processing Indicator
 struct ExpandedProcessingIndicator: View {
-    @State private var rotation: Double = 0
-
     var body: some View {
         ZStack {
             Circle()
                 .fill(Color.white.opacity(0.1))
                 .frame(width: 28, height: 28)
 
-            Circle()
-                .trim(from: 0, to: 0.7)
-                .stroke(Color.accentColor, lineWidth: 2)
-                .frame(width: 16, height: 16)
-                .rotationEffect(.degrees(rotation))
-                .onAppear {
-                    withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
-                        rotation = 360
-                    }
-                }
+            OrbitPixelIndicator()
         }
     }
 }

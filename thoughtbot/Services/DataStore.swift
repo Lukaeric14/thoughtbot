@@ -131,6 +131,39 @@ class DataStore: ObservableObject {
         }
     }
 
+    /// Restore a thought (used when delete fails)
+    func restoreThought(_ thought: Thought, category: Category) {
+        switch category {
+        case .personal:
+            if !personalThoughts.contains(where: { $0.id == thought.id }) {
+                // Insert sorted by creation date (newest first)
+                let index = personalThoughts.firstIndex { $0.createdAt < thought.createdAt } ?? personalThoughts.endIndex
+                personalThoughts.insert(thought, at: index)
+            }
+        case .business:
+            if !businessThoughts.contains(where: { $0.id == thought.id }) {
+                let index = businessThoughts.firstIndex { $0.createdAt < thought.createdAt } ?? businessThoughts.endIndex
+                businessThoughts.insert(thought, at: index)
+            }
+        }
+    }
+
+    /// Restore a task (used when delete fails)
+    func restoreTask(_ task: TaskItem, category: Category) {
+        switch category {
+        case .personal:
+            if !personalTasks.contains(where: { $0.id == task.id }) {
+                let index = personalTasks.firstIndex { $0.createdAt < task.createdAt } ?? personalTasks.endIndex
+                personalTasks.insert(task, at: index)
+            }
+        case .business:
+            if !businessTasks.contains(where: { $0.id == task.id }) {
+                let index = businessTasks.firstIndex { $0.createdAt < task.createdAt } ?? businessTasks.endIndex
+                businessTasks.insert(task, at: index)
+            }
+        }
+    }
+
     // MARK: - Private Methods
 
     private func shouldRefreshTasks(for category: Category) -> Bool {

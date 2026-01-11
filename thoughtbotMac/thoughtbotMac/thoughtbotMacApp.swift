@@ -54,7 +54,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Thoughtbot")
+            button.image = createGridIcon()
         }
 
         let menu = NSMenu()
@@ -63,6 +63,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
+    }
+
+    private func createGridIcon() -> NSImage {
+        let size: CGFloat = 18
+        let image = NSImage(size: NSSize(width: size, height: size))
+
+        image.lockFocus()
+
+        let dotSize: CGFloat = 4
+        let spacing: CGFloat = 2
+        let gridSize = dotSize * 3 + spacing * 2
+        let offset = (size - gridSize) / 2
+
+        NSColor.white.setFill()
+
+        for row in 0..<3 {
+            for col in 0..<3 {
+                let x = offset + CGFloat(col) * (dotSize + spacing)
+                let y = offset + CGFloat(row) * (dotSize + spacing)
+                let rect = NSRect(x: x, y: y, width: dotSize, height: dotSize)
+                let path = NSBezierPath(roundedRect: rect, xRadius: 1, yRadius: 1)
+                path.fill()
+            }
+        }
+
+        image.unlockFocus()
+        image.isTemplate = true
+        return image
     }
 
     private func setupGlobalHotkey() {

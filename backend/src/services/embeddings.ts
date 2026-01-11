@@ -1,21 +1,20 @@
 import { openai } from './openaiClient.js';
 import { query, queryOne } from '../db/client.js';
-import type { Task, Thought } from '../types/index.js';
+import type { Task } from '../types/index.js';
 
 const EMBEDDING_MODEL = 'text-embedding-3-small';
 const EMBEDDING_DIMENSIONS = 1536;
 const SIMILARITY_THRESHOLD = 0.75; // Higher = more strict matching
 
 // In-memory cache for embeddings (refreshed on demand)
+// Note: Only tasks use embeddings - thoughts don't have deduplication
 interface EmbeddingCache {
   tasks: Map<string, { task: Task; embedding: number[] }>;
-  thoughts: Map<string, { thought: Thought; embedding: number[] }>;
   lastRefresh: Date;
 }
 
 let embeddingCache: EmbeddingCache = {
   tasks: new Map(),
-  thoughts: new Map(),
   lastRefresh: new Date(0),
 };
 
@@ -86,44 +85,12 @@ async function refreshTaskEmbeddings(): Promise<void> {
 }
 
 /**
- * Refresh the embedding cache for recent thoughts
- */
-async function refreshThoughtEmbeddings(): Promise<void> {
-  const thoughts = await query<Thought & { embedding: string | null }>(
-    `SELECT * FROM thoughts ORDER BY mention_count DESC, created_at DESC LIMIT 50`,
-    []
-  );
-
-  const newCache = new Map<string, { thought: Thought; embedding: number[] }>();
-
-  for (const thought of thoughts) {
-    let embedding: number[];
-
-    if (thought.embedding) {
-      // Use cached embedding from DB
-      embedding = JSON.parse(thought.embedding);
-    } else {
-      // Generate and store new embedding
-      embedding = await generateEmbedding(thought.text);
-      await query(
-        `UPDATE thoughts SET embedding = $1 WHERE id = $2`,
-        [JSON.stringify(embedding), thought.id]
-      );
-    }
-
-    newCache.set(thought.id, { thought, embedding });
-  }
-
-  embeddingCache.thoughts = newCache;
-}
-
-/**
  * Ensure cache is fresh
  */
 async function ensureCacheFresh(): Promise<void> {
   const now = new Date();
   if (now.getTime() - embeddingCache.lastRefresh.getTime() > CACHE_TTL_MS) {
-    await Promise.all([refreshTaskEmbeddings(), refreshThoughtEmbeddings()]);
+    await refreshTaskEmbeddings();
     embeddingCache.lastRefresh = now;
   }
 }
@@ -164,45 +131,6 @@ export async function findSemanticTaskMatchByEmbedding(
   }
 
   console.log(`No embedding match for "${newTitle}" (max similarity below ${SIMILARITY_THRESHOLD})`);
-  return null;
-}
-
-/**
- * Find a semantically matching thought using embeddings
- * Returns the best matching thought if similarity > threshold
- */
-export async function findSemanticThoughtMatchByEmbedding(
-  newText: string
-): Promise<Thought | null> {
-  await ensureCacheFresh();
-
-  if (embeddingCache.thoughts.size === 0) {
-    return null;
-  }
-
-  // Generate embedding for new text
-  const newEmbedding = await generateEmbedding(newText);
-
-  let bestMatch: { thought: Thought; similarity: number } | null = null;
-
-  for (const { thought, embedding } of embeddingCache.thoughts.values()) {
-    const similarity = cosineSimilarity(newEmbedding, embedding);
-
-    if (similarity > SIMILARITY_THRESHOLD) {
-      if (!bestMatch || similarity > bestMatch.similarity) {
-        bestMatch = { thought, similarity };
-      }
-    }
-  }
-
-  if (bestMatch) {
-    console.log(
-      `Embedding match found: "${newText}" matches "${bestMatch.thought.text}" (similarity: ${bestMatch.similarity.toFixed(3)})`
-    );
-    return bestMatch.thought;
-  }
-
-  console.log(`No embedding match for "${newText}" (max similarity below ${SIMILARITY_THRESHOLD})`);
   return null;
 }
 

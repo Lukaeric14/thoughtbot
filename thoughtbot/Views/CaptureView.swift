@@ -5,41 +5,50 @@ struct CaptureView: View {
     @StateObject private var queue = CaptureQueue.shared
 
     @State private var showPermissionDenied = false
+    @State private var displayState: RecordingState = .idle
 
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Background
-                Color(.systemBackground)
+                // Background - dark when recording/processing
+                backgroundColor
                     .ignoresSafeArea()
+                    .animation(.easeInOut(duration: 0.3), value: displayState)
 
-                VStack {
+                VStack(spacing: 0) {
                     Spacer()
 
-                    // Recording button
-                    RecordButton(
-                        state: recorder.state,
+                    // Recording button with pixel indicator
+                    PixelRecordButton(
+                        state: displayState,
                         onTap: handleTap
                     )
-                    .frame(width: min(geometry.size.width * 0.4, 160),
-                           height: min(geometry.size.width * 0.4, 160))
+                    .frame(width: min(geometry.size.width * 0.45, 180),
+                           height: min(geometry.size.width * 0.45, 180))
 
-                    // Recording time indicator
-                    if recorder.state == .recording {
-                        Text(formatTime(recorder.recordingTime))
-                            .font(.system(.title3, design: .monospaced))
-                            .foregroundColor(.secondary)
-                            .padding(.top, 20)
-                    } else {
-                        Text(" ")
-                            .font(.system(.title3, design: .monospaced))
-                            .padding(.top, 20)
+                    // Status area
+                    VStack(spacing: 8) {
+                        // Timer (only during recording)
+                        if displayState == .recording {
+                            Text(formatTime(recorder.recordingTime))
+                                .font(.system(.title2, design: .monospaced))
+                                .foregroundColor(statusTextColor)
+                                .transition(.opacity)
+                        }
+
+                        // Status text
+                        Text(statusText)
+                            .font(.system(.body, weight: .medium))
+                            .foregroundColor(statusTextColor.opacity(0.7))
                     }
+                    .frame(height: 60)
+                    .padding(.top, 24)
+                    .animation(.easeInOut(duration: 0.2), value: displayState)
 
                     Spacer()
 
                     // Queue indicator (subtle)
-                    if queue.queuedCount > 0 {
+                    if queue.queuedCount > 0 && displayState == .idle {
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.up.circle")
                                 .font(.caption)
@@ -62,71 +71,149 @@ struct CaptureView: View {
         } message: {
             Text("Please enable microphone access in Settings to record voice captures.")
         }
+        .onChange(of: recorder.state) { _, newState in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                displayState = newState
+            }
+        }
+        .onReceive(queue.captureCompleted) { result in
+            handleCaptureCompleted(result: result)
+        }
+    }
+
+    private var backgroundColor: Color {
+        switch displayState {
+        case .idle:
+            return Color(.systemBackground)
+        case .recording, .processing, .noted, .error:
+            return Color.black.opacity(0.95)
+        }
+    }
+
+    private var statusTextColor: Color {
+        switch displayState {
+        case .idle:
+            return Color(.label)
+        case .recording, .processing, .noted, .error:
+            return Color.white
+        }
+    }
+
+    private var statusText: String {
+        switch displayState {
+        case .idle:
+            return "Tap to record"
+        case .recording:
+            return "Listening..."
+        case .processing:
+            return "Processing..."
+        case .noted:
+            return "Noted"
+        case .error:
+            return "Nothing heard"
+        }
     }
 
     private func handleTap() {
         Task {
-            if recorder.state == .idle {
+            switch displayState {
+            case .idle:
                 let started = try? await recorder.startRecording()
                 if started == false {
                     showPermissionDenied = true
                 }
-            } else if recorder.state == .recording {
+            case .recording:
                 if let audioURL = recorder.stopRecording() {
+                    // Show processing state
+                    withAnimation {
+                        displayState = .processing
+                    }
                     queue.enqueue(audioURL: audioURL)
                 }
+            case .processing, .noted, .error:
+                // Ignore taps during these states
+                break
+            }
+        }
+    }
+
+    private func handleCaptureCompleted(result: CaptureResult) {
+        // Show success or error state
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if result == .error {
+                displayState = .error
+                // Haptic feedback
+                let generator = UINotificationFeedbackGenerator()
+                generator.notificationOccurred(.warning)
+            } else {
+                displayState = .noted
+                // Haptic feedback
+                let generator = UINotificationFeedbackGenerator()
+                generator.notificationOccurred(.success)
+            }
+        }
+
+        // Auto-dismiss after delay
+        let dismissDelay: Double = result == .error ? 2.0 : 1.5
+        DispatchQueue.main.asyncAfter(deadline: .now() + dismissDelay) {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                displayState = .idle
             }
         }
     }
 
     private func formatTime(_ time: TimeInterval) -> String {
-        let minutes = Int(time) / 60
-        let seconds = Int(time) % 60
-        let tenths = Int((time.truncatingRemainder(dividingBy: 1)) * 10)
-        return String(format: "%d:%02d.%d", minutes, seconds, tenths)
+        let totalSeconds = Int(time)
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        let seconds = totalSeconds % 60
+
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        } else {
+            return String(format: "%d:%02d", minutes, seconds)
+        }
     }
 }
 
-struct RecordButton: View {
+// MARK: - Pixel Record Button
+struct PixelRecordButton: View {
     let state: RecordingState
     let onTap: () -> Void
 
     @State private var isPressed = false
-    @State private var pulseScale: CGFloat = 1.0
+
+    // Pixel grid sizing
+    private let pixelSize: CGFloat = 20
+    private let pixelSpacing: CGFloat = 6
 
     var body: some View {
         GeometryReader { geometry in
             let size = min(geometry.size.width, geometry.size.height)
 
             ZStack {
-                // Pulse animation when recording
-                if state == .recording {
-                    Circle()
-                        .fill(Color.red.opacity(0.3))
-                        .scaleEffect(pulseScale)
-                        .onAppear {
-                            withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
-                                pulseScale = 1.2
-                            }
-                        }
-                        .onDisappear {
-                            pulseScale = 1.0
-                        }
-                }
-
-                // Main button
+                // Outer glow/shadow
                 Circle()
-                    .fill(buttonColor)
-                    .shadow(color: buttonColor.opacity(0.4), radius: state == .recording ? 15 : 5)
+                    .fill(glowColor.opacity(0.15))
+                    .blur(radius: 20)
+                    .scaleEffect(state == .recording ? 1.3 : 1.0)
+                    .animation(.easeInOut(duration: 0.5), value: state)
 
-                // Icon
-                Image(systemName: iconName)
-                    .font(.system(size: size * 0.35, weight: .semibold))
-                    .foregroundColor(.white)
+                // Main button circle
+                Circle()
+                    .fill(buttonBackgroundColor)
+                    .shadow(color: glowColor.opacity(0.4), radius: state == .idle ? 8 : 15)
+
+                // Pixel indicator (centered)
+                pixelIndicator
+                    .frame(width: size * 0.4, height: size * 0.4)
             }
             .scaleEffect(isPressed ? 0.95 : 1.0)
             .animation(.easeInOut(duration: 0.1), value: isPressed)
             .onTapGesture {
+                // Haptic on tap
+                let generator = UIImpactFeedbackGenerator(style: .medium)
+                generator.impactOccurred()
                 onTap()
             }
             .onLongPressGesture(minimumDuration: 0.01, pressing: { pressing in
@@ -135,25 +222,43 @@ struct RecordButton: View {
         }
     }
 
-    private var buttonColor: Color {
+    @ViewBuilder
+    private var pixelIndicator: some View {
         switch state {
         case .idle:
-            return Color(.systemGray)
+            MicrophonePixelIndicator(pixelSize: pixelSize, spacing: pixelSpacing)
         case .recording:
-            return Color.red
+            WavePixelIndicator(pixelSize: pixelSize, spacing: pixelSpacing)
         case .processing:
-            return Color.orange
+            BreathePixelIndicator(pixelSize: pixelSize, spacing: pixelSpacing)
+        case .noted:
+            ArrowUpPixelIndicator(pixelSize: pixelSize, spacing: pixelSpacing)
+        case .error:
+            ErrorPixelIndicator(pixelSize: pixelSize, spacing: pixelSpacing)
         }
     }
 
-    private var iconName: String {
+    private var buttonBackgroundColor: Color {
         switch state {
         case .idle:
-            return "mic.fill"
+            return Color(.systemGray6)
+        case .recording, .processing, .noted, .error:
+            return Color.black.opacity(0.8)
+        }
+    }
+
+    private var glowColor: Color {
+        switch state {
+        case .idle:
+            return PixelColors.idle
         case .recording:
-            return "stop.fill"
+            return PixelColors.recording
         case .processing:
-            return "ellipsis"
+            return PixelColors.processing
+        case .noted:
+            return PixelColors.success
+        case .error:
+            return PixelColors.error
         }
     }
 }

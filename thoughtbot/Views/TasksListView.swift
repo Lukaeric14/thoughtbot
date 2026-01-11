@@ -7,6 +7,7 @@ struct TasksListView: View {
     @State private var showRecorder = false
     @State private var highlightedId: String?
     @State private var scrollToId: String?
+    @State private var errorItemId: String?  // Track item with delete error
 
     private var tasks: [TaskItem] {
         dataStore.tasks(for: selectedCategory)
@@ -43,19 +44,30 @@ struct TasksListView: View {
                 } else {
                     ScrollViewReader { proxy in
                         List {
-                            ForEach(tasks) { task in
-                                TaskRow(task: task, isHighlighted: highlightedId == task.id, onStatusChange: { newStatus in
-                                    await updateTaskStatus(taskId: task.id, status: newStatus)
-                                })
+                            ForEach(tasks.filter { $0.status == .open }) { task in
+                                TaskRow(
+                                    task: task,
+                                    isHighlighted: highlightedId == task.id,
+                                    hasError: errorItemId == task.id,
+                                    onComplete: {
+                                        completeTask(task: task)
+                                    }
+                                )
                                 .id(task.id)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                     Button(role: .destructive) {
-                                        Task {
-                                            await deleteTask(task: task)
-                                        }
+                                        deleteTask(task: task)
                                     } label: {
                                         Label("Delete", systemImage: "trash")
                                     }
+                                }
+                                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                    Button {
+                                        completeTask(task: task)
+                                    } label: {
+                                        Label("Done", systemImage: "checkmark")
+                                    }
+                                    .tint(.green)
                                 }
                             }
                         }
@@ -98,13 +110,7 @@ struct TasksListView: View {
             .navigationTitle("Tasks")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: {
-                        // Instant toggle - data already cached
-                        selectedCategory = selectedCategory == .personal ? .business : .personal
-                    }) {
-                        Image(systemName: selectedCategory == .personal ? "house.fill" : "building.2.fill")
-                            .foregroundColor(.secondary)
-                    }
+                    CategoryToggle(selectedCategory: $selectedCategory)
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     ProcessingIndicator {
@@ -156,25 +162,79 @@ struct TasksListView: View {
         }
     }
 
-    private func updateTaskStatus(taskId: String, status: TaskStatus) async {
-        do {
-            let updatedTask = try await APIClient.shared.updateTaskStatus(taskId: taskId, status: status)
-            dataStore.updateTaskLocally(updatedTask)
-        } catch {
-            print("Error updating task: \(error)")
-            await dataStore.forceRefreshTasks(for: selectedCategory)
+    private func completeTask(task: TaskItem) {
+        let category = task.category ?? selectedCategory
+
+        // Optimistic removal - remove immediately with animation
+        withAnimation(.easeOut(duration: 0.25)) {
+            dataStore.removeTaskLocally(id: task.id, category: category)
+        }
+
+        // Haptic feedback
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+
+        // API call in background
+        Task {
+            do {
+                _ = try await APIClient.shared.updateTaskStatus(taskId: task.id, status: .done)
+                // Success - task completed and removed from open list
+            } catch {
+                print("Error completing task: \(error)")
+                // Failure - restore task with animation
+                await MainActor.run {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                        dataStore.restoreTask(task, category: category)
+                    }
+                    showError(itemId: task.id)
+                }
+            }
         }
     }
 
-    private func deleteTask(task: TaskItem) async {
-        do {
-            try await APIClient.shared.deleteTask(id: task.id)
-            withAnimation {
-                dataStore.removeTaskLocally(id: task.id, category: task.category ?? selectedCategory)
+    private func deleteTask(task: TaskItem) {
+        let category = task.category ?? selectedCategory
+
+        // Optimistic delete - remove immediately with animation
+        withAnimation(.easeOut(duration: 0.25)) {
+            dataStore.removeTaskLocally(id: task.id, category: category)
+        }
+
+        // Haptic feedback
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+
+        // API call in background
+        Task {
+            do {
+                try await APIClient.shared.deleteTask(id: task.id)
+                // Success - item already removed
+            } catch {
+                print("Error deleting task: \(error)")
+                // Failure - restore item with animation
+                await MainActor.run {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                        dataStore.restoreTask(task, category: category)
+                    }
+                    showError(itemId: task.id)
+                }
             }
-        } catch {
-            print("Error deleting task: \(error)")
-            await dataStore.forceRefreshTasks(for: selectedCategory)
+        }
+    }
+
+    private func showError(itemId: String) {
+        errorItemId = itemId
+        // Haptic feedback for error
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.error)
+
+        // Auto-clear error after 3 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            withAnimation {
+                if errorItemId == itemId {
+                    errorItemId = nil
+                }
+            }
         }
     }
 }
@@ -182,40 +242,22 @@ struct TasksListView: View {
 struct TaskRow: View {
     let task: TaskItem
     var isHighlighted: Bool = false
-    let onStatusChange: (TaskStatus) async -> Void
+    var hasError: Bool = false
+    var onComplete: () -> Void
 
     @State private var isExpanded = false
-    @State private var isUpdating = false
-
-    private var isDone: Bool {
-        task.status == .done || task.status == .cancelled
-    }
+    @State private var shakeOffset: CGFloat = 0
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            // Checkbox
-            Button(action: {
-                Task {
-                    isUpdating = true
-                    let newStatus: TaskStatus = isDone ? .open : .done
-                    await onStatusChange(newStatus)
-                    isUpdating = false
-                }
-            }) {
-                ZStack {
-                    if isUpdating {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    } else {
-                        Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
-                            .font(.title2)
-                            .foregroundColor(isDone ? .green : .secondary)
-                    }
-                }
-                .frame(width: 28, height: 28)
+            // Checkbox button
+            Button(action: onComplete) {
+                Image(systemName: "circle")
+                    .font(.title2)
+                    .foregroundColor(.secondary)
+                    .frame(width: 28, height: 28)
             }
             .buttonStyle(.plain)
-            .disabled(isUpdating)
 
             // Content
             VStack(alignment: .leading, spacing: 8) {
@@ -224,8 +266,6 @@ struct TaskRow: View {
                     Text(task.title)
                         .font(.body)
                         .fontWeight(.semibold)
-                        .strikethrough(isDone)
-                        .foregroundColor(isDone ? .secondary : .primary)
 
                     // Mention count badge (only show if > 1)
                     if let count = task.mentionCount, count > 1 {
@@ -261,31 +301,54 @@ struct TaskRow: View {
                     }
                 }
 
-                // Due date and timestamp
-                HStack(spacing: 8) {
-                    if !isDone {
-                        Label(formatDueDate(task.dueDate), systemImage: "calendar")
-                            .font(.caption2)
-                            .foregroundColor(isOverdue(task.dueDate) ? .red : .secondary)
-                    }
-
-                    Text(task.createdAt, style: .relative)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .opacity(0.7)
-                }
+                // Due date
+                Label(formatDueDate(task.dueDate), systemImage: "calendar")
+                    .font(.caption2)
+                    .foregroundColor(isOverdue(task.dueDate) ? .red : .secondary)
             }
 
             Spacer()
         }
         .padding(.vertical, 4)
-        .padding(.horizontal, isHighlighted ? 8 : 0)
+        .padding(.horizontal, isHighlighted || hasError ? 8 : 0)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isHighlighted ? Color.accentColor.opacity(0.15) : Color.clear)
+                .fill(backgroundColor)
         )
+        .offset(x: shakeOffset)
         .animation(.easeInOut(duration: 0.3), value: isHighlighted)
-        .opacity(isDone ? 0.6 : 1.0)
+        .onChange(of: hasError) { _, newValue in
+            if newValue {
+                // Shake animation
+                withAnimation(.spring(response: 0.1, dampingFraction: 0.3)) {
+                    shakeOffset = 8
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    withAnimation(.spring(response: 0.1, dampingFraction: 0.3)) {
+                        shakeOffset = -8
+                    }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    withAnimation(.spring(response: 0.1, dampingFraction: 0.3)) {
+                        shakeOffset = 4
+                    }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    withAnimation(.spring(response: 0.1, dampingFraction: 0.5)) {
+                        shakeOffset = 0
+                    }
+                }
+            }
+        }
+    }
+
+    private var backgroundColor: Color {
+        if hasError {
+            return Color.red.opacity(0.15)
+        } else if isHighlighted {
+            return Color.accentColor.opacity(0.15)
+        }
+        return Color.clear
     }
 
     private func formatDueDate(_ date: Date) -> String {

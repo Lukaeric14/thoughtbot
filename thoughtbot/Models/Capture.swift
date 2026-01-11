@@ -13,6 +13,7 @@ struct CaptureStatus: Codable {
 enum CaptureResult {
     case thought
     case task
+    case error      // Invalid/empty transcript (silence, "you", etc.)
     case unknown
 
     init(from classification: String?) {
@@ -21,6 +22,8 @@ enum CaptureResult {
             self = .thought
         case "task_create", "task_update":
             self = .task
+        case "error":
+            self = .error
         default:
             self = .unknown
         }

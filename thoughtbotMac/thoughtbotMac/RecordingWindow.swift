@@ -48,8 +48,8 @@ class RecordingWindow: NSObject {
     private var viewModel = WidgetViewModel()
 
     // Hover state management to prevent flickering
-    private var lastHoverChangeTime: Date = .distantPast
-    private let hoverDebounceInterval: TimeInterval = 0.35
+    private var lastHoverEnterTime: Date = .distantPast
+    private let hoverEnterDebounceInterval: TimeInterval = 0.3
     private var isAnimatingHover = false
 
     // Notch safe area - content should be positioned below this
@@ -143,23 +143,26 @@ class RecordingWindow: NSObject {
         guard !cannotExpand else { return }
         guard !isAnimatingHover else { return }
 
-        // Debounce rapid hover changes
+        // Debounce rapid hover entries to prevent flickering
         let now = Date()
-        guard now.timeIntervalSince(lastHoverChangeTime) >= hoverDebounceInterval else { return }
-        lastHoverChangeTime = now
+        guard now.timeIntervalSince(lastHoverEnterTime) >= hoverEnterDebounceInterval else { return }
+        lastHoverEnterTime = now
         isAnimatingHover = true
 
         // Expand to show full dropdown
         viewModel.isHovering = true
         positionWindow(state: .expanded, animate: true)
         viewModel.fetchData()
-        isAnimatingHover = false
+
+        // Reset animation flag after animation completes
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            self.isAnimatingHover = false
+        }
     }
 
     private func handleMouseExited() {
         // Handle mouse exit when expanded via hover
         guard viewModel.isHovering else { return }
-        guard !isAnimatingHover else { return }
 
         // Check if mouse is actually outside the window frame
         guard let window = window else { return }
@@ -167,15 +170,22 @@ class RecordingWindow: NSObject {
         let windowFrame = window.frame
 
         // Add a small margin to prevent edge flickering
-        let expandedFrame = windowFrame.insetBy(dx: -5, dy: -5)
+        let expandedFrame = windowFrame.insetBy(dx: -3, dy: -3)
         if expandedFrame.contains(mouseLocation) {
             return // Mouse is still inside, ignore this exit event
         }
 
-        // Debounce rapid hover changes
-        let now = Date()
-        guard now.timeIntervalSince(lastHoverChangeTime) >= hoverDebounceInterval else { return }
-        lastHoverChangeTime = now
+        // Don't exit during animation - but schedule a recheck
+        if isAnimatingHover {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                // Recheck if mouse is still outside after animation
+                if self.viewModel.isHovering {
+                    self.handleMouseExited()
+                }
+            }
+            return
+        }
+
         isAnimatingHover = true
 
         // Collapse back to previous state
@@ -191,7 +201,11 @@ class RecordingWindow: NSObject {
             viewModel.widgetState = .idle
             positionWindow(state: .idle, animate: true)
         }
-        isAnimatingHover = false
+
+        // Reset animation flag after animation completes
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            self.isAnimatingHover = false
+        }
     }
 
     private func positionWindow(state: WidgetState, animate: Bool) {
@@ -230,7 +244,7 @@ class RecordingWindow: NSObject {
                 width = idleWidth
                 height = idleHeight
             }
-        case .recording, .processing, .noted:
+        case .recording, .processing, .noted, .error:
             // Semi-expanded pill
             width = semiExpandedWidth
             height = semiExpandedHeight
@@ -262,7 +276,7 @@ class RecordingWindow: NSObject {
         }
 
         // Update mouse tracking - allow mouse events for typing and hovering
-        window.ignoresMouseEvents = state == .recording || state == .processing || state == .noted
+        window.ignoresMouseEvents = state == .recording || state == .processing || state == .noted || state == .error
     }
 
     func toggleExpanded() {
@@ -341,15 +355,13 @@ class RecordingWindow: NSObject {
                 } catch {
                     print("Upload error: \(error)")
                     viewModel.processingCount = max(0, viewModel.processingCount - 1)
-                    viewModel.widgetState = .idle
-                    positionWindow(state: .idle, animate: true)
+                    await self.showErrorState()
                 }
             }
         } else {
             print("stopAndSend: no audio URL from recorder")
             viewModel.processingCount = max(0, viewModel.processingCount - 1)
-            viewModel.widgetState = .idle
-            positionWindow(state: .idle, animate: true)
+            showErrorState()
         }
     }
 
@@ -418,6 +430,20 @@ class RecordingWindow: NSObject {
             print("Refreshed cache: \(thoughts.count) thoughts, \(tasks.count) tasks. Result: \(captureResult)")
             viewModel.processingCount = max(0, viewModel.processingCount - 1)
 
+            // Check if this was an error (nothing heard)
+            if captureResult == .error {
+                print("Nothing heard - showing error state")
+                viewModel.widgetState = .error
+                positionWindow(state: .error, animate: true)
+
+                // After 2 seconds, transition to idle
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    self.viewModel.widgetState = .idle
+                    self.positionWindow(state: .idle, animate: true)
+                }
+                return
+            }
+
             // Show "Noted" success state briefly
             viewModel.widgetState = .noted
             positionWindow(state: .noted, animate: true)
@@ -466,6 +492,9 @@ class RecordingWindow: NSObject {
                         }
                     }
                 }
+            case .error:
+                // Already handled above with early return, but Swift requires exhaustive switch
+                break
             }
         } catch {
             print("Fetch error after capture: \(error)")
@@ -477,6 +506,17 @@ class RecordingWindow: NSObject {
                 self.viewModel.widgetState = .idle
                 self.positionWindow(state: .idle, animate: true)
             }
+        }
+    }
+
+    func showErrorState() {
+        viewModel.widgetState = .error
+        positionWindow(state: .error, animate: true)
+
+        // After 2 seconds, transition to idle
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            self.viewModel.widgetState = .idle
+            self.positionWindow(state: .idle, animate: true)
         }
     }
 
@@ -573,6 +613,7 @@ enum WidgetState {
     case recording
     case processing
     case noted      // Success state shown briefly after processing
+    case error      // Error state shown briefly after failure
     case expanded
     case typing
 }
@@ -612,6 +653,9 @@ class WidgetViewModel: ObservableObject {
     @Published var highlightedTaskId: String?
     @Published var typingText: String = ""
 
+    // Error state for subtle feedback
+    @Published var errorItemId: String?
+
     // Persisted category
     @AppStorage("macSelectedCategory") var selectedCategory: String = "personal"
 
@@ -628,9 +672,27 @@ class WidgetViewModel: ObservableObject {
     var isProcessing: Bool { processingCount > 0 || widgetState == .processing }
 
     init() {
+        // Ensure selectedCategory is valid (default to "personal" if invalid)
+        if selectedCategory != "personal" && selectedCategory != "business" {
+            selectedCategory = "personal"
+        }
+
         // Prefetch all data on init
         Task {
             await dataStore.prefetchAll()
+        }
+    }
+
+    func showError(itemId: String) {
+        errorItemId = itemId
+
+        // Auto-clear error after 3 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            withAnimation {
+                if self?.errorItemId == itemId {
+                    self?.errorItemId = nil
+                }
+            }
         }
     }
 
@@ -659,31 +721,84 @@ class WidgetViewModel: ObservableObject {
     }
 
     func deleteThought(id: String) {
+        // Store for potential restoration
+        let deletedThought = dataStore.thoughts(for: selectedCategory).first { $0.id == id }
+
+        // Optimistic delete - notify view to update
+        withAnimation {
+            dataStore.removeThoughtLocally(id: id, category: selectedCategory)
+            objectWillChange.send()
+        }
+
         Task {
             do {
                 try await MacAPIClient.shared.deleteThought(id: id)
-                await MainActor.run {
-                    withAnimation {
-                        dataStore.removeThoughtLocally(id: id, category: selectedCategory)
-                    }
-                }
+                // Success - item already removed
             } catch {
                 print("Delete thought error: \(error)")
+                // Failure - restore item and show error
+                await MainActor.run {
+                    if let thought = deletedThought {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                            dataStore.restoreThought(thought, category: selectedCategory)
+                            objectWillChange.send()
+                        }
+                        showError(itemId: id)
+                    }
+                }
             }
         }
     }
 
     func deleteTask(id: String) {
+        // Store for potential restoration
+        let deletedTask = dataStore.tasks(for: selectedCategory).first { $0.id == id }
+
+        // Optimistic delete - notify view to update
+        withAnimation {
+            dataStore.removeTaskLocally(id: id, category: selectedCategory)
+            objectWillChange.send()
+        }
+
         Task {
             do {
                 try await MacAPIClient.shared.deleteTask(id: id)
-                await MainActor.run {
-                    withAnimation {
-                        dataStore.removeTaskLocally(id: id, category: selectedCategory)
-                    }
-                }
+                // Success - item already removed
             } catch {
                 print("Delete task error: \(error)")
+                // Failure - restore item and show error
+                await MainActor.run {
+                    if let task = deletedTask {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                            dataStore.restoreTask(task, category: selectedCategory)
+                            objectWillChange.send()
+                        }
+                        showError(itemId: id)
+                    }
+                }
+            }
+        }
+    }
+
+    func completeTask(id: String) {
+        // Optimistic removal from open tasks list
+        withAnimation {
+            dataStore.removeTaskLocally(id: id, category: selectedCategory)
+            objectWillChange.send()
+        }
+
+        Task {
+            do {
+                try await MacAPIClient.shared.updateTask(id: id, status: "done")
+                // Success - task completed
+            } catch {
+                print("Complete task error: \(error)")
+                // Failure - refresh to restore
+                await dataStore.forceRefresh(for: selectedCategory)
+                await MainActor.run {
+                    objectWillChange.send()
+                    showError(itemId: id)
+                }
             }
         }
     }
@@ -860,7 +975,7 @@ struct TypingInputView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 4))
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 36)
             .padding(.vertical, 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -888,14 +1003,27 @@ struct ExpandedDropdownView: View {
 
             // Header row (below notch)
             HStack(spacing: 12) {
-                // Left: Pixel grid + name
+                // Left: Pixel grid with count badge + name
                 HStack(spacing: 10) {
-                    if viewModel.isProcessing {
-                        BreathePixelIndicator()
-                            .frame(width: 18, height: 18)
-                    } else {
-                        IdlePixelGrid()
-                            .frame(width: 18, height: 18)
+                    ZStack(alignment: .topTrailing) {
+                        if viewModel.isProcessing {
+                            BreathePixelIndicator()
+                                .frame(width: 18, height: 18)
+                        } else {
+                            IdlePixelGrid()
+                                .frame(width: 18, height: 18)
+                        }
+
+                        // Count badge (only when processing multiple)
+                        if viewModel.processingCount > 1 {
+                            Text("\(viewModel.processingCount)")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(width: 12, height: 12)
+                                .background(Circle().fill(Color.purple))
+                                .offset(x: 4, y: -4)
+                                .transition(.scale.combined(with: .opacity))
+                        }
                     }
 
                     Text("thoughtbot")
@@ -905,18 +1033,49 @@ struct ExpandedDropdownView: View {
 
                 Spacer()
 
-                // Right: Category toggle + settings
-                HStack(spacing: 12) {
-                    Button(action: { viewModel.toggleCategory() }) {
-                        Image(systemName: viewModel.selectedCategory == "personal" ? "house.fill" : "building.2.fill")
-                            .font(.system(size: 13))
-                            .foregroundColor(.white.opacity(0.6))
-                            .frame(width: 32, height: 32)
-                            .background(Color.white.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                // Right: Category toggle (dual-icon)
+                HStack(spacing: 2) {
+                    // Personal button
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            viewModel.selectedCategory = "personal"
+                        }
+                    }) {
+                        Image(systemName: "house.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(viewModel.selectedCategory == "personal" ? .white : .white.opacity(0.3))
+                            .frame(width: 28, height: 28)
+                            .background(
+                                viewModel.selectedCategory == "personal"
+                                    ? Color.white.opacity(0.25)
+                                    : Color.clear
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+
+                    // Business button
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            viewModel.selectedCategory = "business"
+                        }
+                    }) {
+                        Image(systemName: "building.2.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(viewModel.selectedCategory == "business" ? .white : .white.opacity(0.3))
+                            .frame(width: 28, height: 28)
+                            .background(
+                                viewModel.selectedCategory == "business"
+                                    ? Color.white.opacity(0.25)
+                                    : Color.clear
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                     .buttonStyle(.plain)
                 }
+                .padding(2)
+                .background(Color.white.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             .padding(.horizontal, 24)
             .padding(.top, 10)
@@ -1122,7 +1281,11 @@ struct ThoughtsListView: View {
                     EmptyStateView(icon: "lightbulb", message: "No thoughts yet")
                 } else {
                     ForEach(viewModel.thoughts.prefix(10)) { thought in
-                        ThoughtRow(thought: thought, isHighlighted: viewModel.highlightedThoughtId == thought.id) {
+                        ThoughtRow(
+                            thought: thought,
+                            isHighlighted: viewModel.highlightedThoughtId == thought.id,
+                            hasError: viewModel.errorItemId == thought.id
+                        ) {
                             viewModel.deleteThought(id: thought.id)
                         }
                     }
@@ -1137,9 +1300,26 @@ struct ThoughtsListView: View {
 struct ThoughtRow: View {
     let thought: ThoughtItem
     var isHighlighted: Bool = false
+    var hasError: Bool = false
     var onDelete: () -> Void
 
     @State private var isHovering = false
+    @State private var shakeOffset: CGFloat = 0
+    @State private var isDeleting = false
+
+    private var backgroundColor: Color {
+        if hasError { return Color.red.opacity(0.25) }
+        if isDeleting { return Color.white.opacity(0.04) }
+        if isHighlighted { return Color.accentColor.opacity(0.3) }
+        if isHovering { return Color.white.opacity(0.12) }
+        return Color.white.opacity(0.08)
+    }
+
+    private var borderColor: Color {
+        if hasError { return Color.red.opacity(0.5) }
+        if isHighlighted { return Color.accentColor }
+        return Color.clear
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1147,7 +1327,7 @@ struct ThoughtRow: View {
                 HStack(spacing: 6) {
                     Text(thought.text)
                         .font(.system(size: 12))
-                        .foregroundColor(.white)
+                        .foregroundColor(isDeleting ? .white.opacity(0.3) : .white)
                         .lineLimit(2)
 
                     // Mention count badge (only show if > 1)
@@ -1164,36 +1344,69 @@ struct ThoughtRow: View {
 
                 Text(formatRelativeTime(thought.created_at))
                     .font(.system(size: 10))
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(.white.opacity(isDeleting ? 0.2 : 0.5))
             }
 
             Spacer()
 
-            // Delete button on hover
-            if isHovering {
-                Button(action: onDelete) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 11))
-                        .foregroundColor(.red.opacity(0.8))
+            // Delete button or spinner on hover
+            if isHovering || isDeleting {
+                if isDeleting {
+                    ProgressView()
+                        .scaleEffect(0.5)
+                        .frame(width: 16, height: 16)
+                } else {
+                    Button(action: {
+                        isDeleting = true
+                        onDelete()
+                    }) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 11))
+                            .foregroundColor(.red.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .transition(.opacity.combined(with: .scale))
                 }
-                .buttonStyle(.plain)
-                .transition(.opacity.combined(with: .scale))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isHighlighted ? Color.accentColor.opacity(0.3) : (isHovering ? Color.white.opacity(0.12) : Color.white.opacity(0.08)))
+                .fill(backgroundColor)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(isHighlighted ? Color.accentColor : Color.clear, lineWidth: 1)
+                .stroke(borderColor, lineWidth: 1)
         )
+        .offset(x: shakeOffset)
         .animation(.easeInOut(duration: 0.15), value: isHovering)
         .animation(.easeInOut(duration: 0.3), value: isHighlighted)
         .onHover { hovering in
             isHovering = hovering
+        }
+        .onChange(of: hasError) { _, isError in
+            if isError {
+                // Shake animation sequence
+                withAnimation(.spring(response: 0.1, dampingFraction: 0.3)) {
+                    shakeOffset = 8
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    withAnimation(.spring(response: 0.1, dampingFraction: 0.3)) {
+                        shakeOffset = -6
+                    }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    withAnimation(.spring(response: 0.1, dampingFraction: 0.3)) {
+                        shakeOffset = 4
+                    }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    withAnimation(.spring(response: 0.1, dampingFraction: 0.5)) {
+                        shakeOffset = 0
+                    }
+                }
+            }
         }
     }
 }
@@ -1209,9 +1422,17 @@ struct TasksListView: View {
                     EmptyStateView(icon: "checkmark.circle", message: "No tasks yet")
                 } else {
                     ForEach(viewModel.tasks.filter { $0.status == "open" }.prefix(10)) { task in
-                        TaskRow(task: task, isHighlighted: viewModel.highlightedTaskId == task.id) {
-                            viewModel.deleteTask(id: task.id)
-                        }
+                        TaskRow(
+                            task: task,
+                            isHighlighted: viewModel.highlightedTaskId == task.id,
+                            hasError: viewModel.errorItemId == task.id,
+                            onComplete: {
+                                viewModel.completeTask(id: task.id)
+                            },
+                            onDelete: {
+                                viewModel.deleteTask(id: task.id)
+                            }
+                        )
                     }
                 }
             }
@@ -1224,21 +1445,56 @@ struct TasksListView: View {
 struct TaskRow: View {
     let task: TaskItem
     var isHighlighted: Bool = false
+    var hasError: Bool = false
+    var onComplete: () -> Void
     var onDelete: () -> Void
 
     @State private var isHovering = false
+    @State private var shakeOffset: CGFloat = 0
+    @State private var isCompleting = false
+    @State private var isDeleting = false
+
+    private var backgroundColor: Color {
+        if hasError { return Color.red.opacity(0.25) }
+        if isDeleting { return Color.white.opacity(0.04) }
+        if isHighlighted { return Color.accentColor.opacity(0.3) }
+        if isHovering { return Color.white.opacity(0.12) }
+        return Color.white.opacity(0.08)
+    }
+
+    private var borderColor: Color {
+        if hasError { return Color.red.opacity(0.5) }
+        if isHighlighted { return Color.accentColor }
+        return Color.clear
+    }
 
     var body: some View {
         HStack(spacing: 10) {
-            Circle()
-                .stroke(Color.white.opacity(0.4), lineWidth: 1.5)
-                .frame(width: 16, height: 16)
+            // Tappable checkbox
+            Button(action: {
+                isCompleting = true
+                onComplete()
+            }) {
+                ZStack {
+                    Circle()
+                        .stroke(Color.white.opacity(0.4), lineWidth: 1.5)
+                        .frame(width: 16, height: 16)
+
+                    if isCompleting {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.green)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(isDeleting)
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(task.title)
                         .font(.system(size: 12))
-                        .foregroundColor(.white)
+                        .foregroundColor(isDeleting ? .white.opacity(0.3) : .white)
                         .lineLimit(2)
 
                     // Mention count badge (only show if > 1)
@@ -1255,36 +1511,69 @@ struct TaskRow: View {
 
                 Text(formatDueDate(task.due_date))
                     .font(.system(size: 10))
-                    .foregroundColor(isOverdue(task.due_date) ? .red.opacity(0.8) : .white.opacity(0.5))
+                    .foregroundColor(isDeleting ? .white.opacity(0.2) : (isOverdue(task.due_date) ? .red.opacity(0.8) : .white.opacity(0.5)))
             }
 
             Spacer()
 
-            // Delete button on hover
-            if isHovering {
-                Button(action: onDelete) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 11))
-                        .foregroundColor(.red.opacity(0.8))
+            // Delete button or spinner on hover
+            if isHovering || isDeleting {
+                if isDeleting {
+                    ProgressView()
+                        .scaleEffect(0.5)
+                        .frame(width: 16, height: 16)
+                } else {
+                    Button(action: {
+                        isDeleting = true
+                        onDelete()
+                    }) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 11))
+                            .foregroundColor(.red.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .transition(.opacity.combined(with: .scale))
                 }
-                .buttonStyle(.plain)
-                .transition(.opacity.combined(with: .scale))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isHighlighted ? Color.accentColor.opacity(0.3) : (isHovering ? Color.white.opacity(0.12) : Color.white.opacity(0.08)))
+                .fill(backgroundColor)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(isHighlighted ? Color.accentColor : Color.clear, lineWidth: 1)
+                .stroke(borderColor, lineWidth: 1)
         )
+        .offset(x: shakeOffset)
         .animation(.easeInOut(duration: 0.15), value: isHovering)
         .animation(.easeInOut(duration: 0.3), value: isHighlighted)
         .onHover { hovering in
             isHovering = hovering
+        }
+        .onChange(of: hasError) { _, isError in
+            if isError {
+                // Shake animation sequence
+                withAnimation(.spring(response: 0.1, dampingFraction: 0.3)) {
+                    shakeOffset = 8
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    withAnimation(.spring(response: 0.1, dampingFraction: 0.3)) {
+                        shakeOffset = -6
+                    }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    withAnimation(.spring(response: 0.1, dampingFraction: 0.3)) {
+                        shakeOffset = 4
+                    }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    withAnimation(.spring(response: 0.1, dampingFraction: 0.5)) {
+                        shakeOffset = 0
+                    }
+                }
+            }
         }
     }
 }
@@ -1351,6 +1640,9 @@ struct NotchPillView: View {
                     case .noted:
                         // Success state with green up arrow
                         notedView
+                    case .error:
+                        // Error state with red X
+                        errorView
                     case .expanded, .typing:
                         // These are handled by other views
                         EmptyView()
@@ -1449,6 +1741,21 @@ struct NotchPillView: View {
             Text("Noted")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(.white)
+
+            Spacer()
+        }
+        .padding(.horizontal, 36)
+    }
+
+    // MARK: - Error View (failure state)
+    private var errorView: some View {
+        HStack(spacing: 12) {
+            ErrorPixelIndicator()
+                .frame(width: 22, height: 22)
+
+            Text("Nothing heard")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.red.opacity(0.9))
 
             Spacer()
         }
@@ -1867,6 +2174,73 @@ struct ArrowUpPixelIndicator: View {
         // ~200ms per frame for smooth upward motion
         Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { _ in
             withAnimation(.easeOut(duration: 0.15)) {
+                frame += 1
+            }
+        }
+    }
+}
+
+// MARK: - Error Pixel Indicator (for error state)
+// Red X pattern that pulses
+// X shape:
+// ●   ●   <- top corners
+//   ●     <- center
+// ●   ●   <- bottom corners
+struct ErrorPixelIndicator: View {
+    @State private var frame: Int = 0
+
+    // Red for error
+    private let errorColor = Color(red: 0.95, green: 0.3, blue: 0.3)
+
+    // X pixels: diagonals
+    private func isXPixel(row: Int, col: Int) -> Bool {
+        return (row == col) || (row + col == 2)
+    }
+
+    // Animation: X pulses/flashes
+    private func isOn(row: Int, col: Int) -> Double {
+        if !isXPixel(row: row, col: col) { return 0.0 }
+
+        let phase = frame % 6
+
+        switch phase {
+        case 0:  // Center starts
+            if row == 1 && col == 1 { return 1.0 }
+            return 0.3
+        case 1:  // Center bright, corners growing
+            if row == 1 && col == 1 { return 1.0 }
+            return 0.6
+        case 2:  // Full X visible
+            return 1.0
+        case 3:  // Full X pulse
+            return 0.9
+        case 4:  // Dimming
+            return 0.7
+        case 5:  // Pause dim
+            return 0.5
+        default:
+            return 0.5
+        }
+    }
+
+    var body: some View {
+        let pixelStates = (0..<3).map { row in
+            (0..<3).map { col in isOn(row: row, col: col) }
+        }
+        let colors = (0..<3).map { _ in
+            (0..<3).map { _ in errorColor }
+        }
+
+        PixelGridIndicator(pixelStates: pixelStates, colors: colors)
+            .onAppear {
+                startAnimation()
+            }
+    }
+
+    private func startAnimation() {
+        // ~200ms per frame for pulsing
+        Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { _ in
+            withAnimation(.easeInOut(duration: 0.15)) {
                 frame += 1
             }
         }

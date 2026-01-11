@@ -7,6 +7,7 @@ struct ThoughtsListView: View {
     @State private var showRecorder = false
     @State private var highlightedId: String?
     @State private var scrollToId: String?
+    @State private var errorItemId: String?  // Track item with delete error
 
     private var thoughts: [Thought] {
         dataStore.thoughts(for: selectedCategory)
@@ -44,17 +45,19 @@ struct ThoughtsListView: View {
                     ScrollViewReader { proxy in
                         List {
                             ForEach(thoughts) { thought in
-                                ThoughtRow(thought: thought, isHighlighted: highlightedId == thought.id)
-                                    .id(thought.id)
-                                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                        Button(role: .destructive) {
-                                            Task {
-                                                await deleteThought(thought: thought)
-                                            }
-                                        } label: {
-                                            Label("Delete", systemImage: "trash")
-                                        }
+                                ThoughtRow(
+                                    thought: thought,
+                                    isHighlighted: highlightedId == thought.id,
+                                    hasError: errorItemId == thought.id
+                                )
+                                .id(thought.id)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button(role: .destructive) {
+                                        deleteThought(thought: thought)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
                                     }
+                                }
                             }
                         }
                         .listStyle(.plain)
@@ -96,13 +99,7 @@ struct ThoughtsListView: View {
             .navigationTitle("Thoughts")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: {
-                        // Instant toggle - data already cached
-                        selectedCategory = selectedCategory == .personal ? .business : .personal
-                    }) {
-                        Image(systemName: selectedCategory == .personal ? "house.fill" : "building.2.fill")
-                            .foregroundColor(.secondary)
-                    }
+                    CategoryToggle(selectedCategory: $selectedCategory)
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     ProcessingIndicator {
@@ -154,15 +151,50 @@ struct ThoughtsListView: View {
         }
     }
 
-    private func deleteThought(thought: Thought) async {
-        do {
-            try await APIClient.shared.deleteThought(id: thought.id)
-            withAnimation {
-                dataStore.removeThoughtLocally(id: thought.id, category: thought.category ?? selectedCategory)
+    private func deleteThought(thought: Thought) {
+        let category = thought.category ?? selectedCategory
+
+        // Optimistic delete - remove immediately with animation
+        withAnimation(.easeOut(duration: 0.25)) {
+            dataStore.removeThoughtLocally(id: thought.id, category: category)
+        }
+
+        // Haptic feedback
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+
+        // API call in background
+        Task {
+            do {
+                try await APIClient.shared.deleteThought(id: thought.id)
+                // Success - item already removed
+            } catch {
+                print("Error deleting thought: \(error)")
+                // Failure - restore item with animation
+                await MainActor.run {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                        dataStore.restoreThought(thought, category: category)
+                    }
+                    // Show error state
+                    showError(itemId: thought.id)
+                }
             }
-        } catch {
-            print("Error deleting thought: \(error)")
-            await dataStore.forceRefreshThoughts(for: selectedCategory)
+        }
+    }
+
+    private func showError(itemId: String) {
+        errorItemId = itemId
+        // Haptic feedback for error
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.error)
+
+        // Auto-clear error after 3 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            withAnimation {
+                if errorItemId == itemId {
+                    errorItemId = nil
+                }
+            }
         }
     }
 }
@@ -170,7 +202,9 @@ struct ThoughtsListView: View {
 struct ThoughtRow: View {
     let thought: Thought
     var isHighlighted: Bool = false
+    var hasError: Bool = false
     @State private var isExpanded = false
+    @State private var shakeOffset: CGFloat = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -221,12 +255,45 @@ struct ThoughtRow: View {
                 .opacity(0.7)
         }
         .padding(.vertical, 4)
-        .padding(.horizontal, isHighlighted ? 8 : 0)
+        .padding(.horizontal, isHighlighted || hasError ? 8 : 0)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isHighlighted ? Color.accentColor.opacity(0.15) : Color.clear)
+                .fill(backgroundColor)
         )
+        .offset(x: shakeOffset)
         .animation(.easeInOut(duration: 0.3), value: isHighlighted)
+        .onChange(of: hasError) { _, newValue in
+            if newValue {
+                // Shake animation
+                withAnimation(.spring(response: 0.1, dampingFraction: 0.3)) {
+                    shakeOffset = 8
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    withAnimation(.spring(response: 0.1, dampingFraction: 0.3)) {
+                        shakeOffset = -8
+                    }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    withAnimation(.spring(response: 0.1, dampingFraction: 0.3)) {
+                        shakeOffset = 4
+                    }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    withAnimation(.spring(response: 0.1, dampingFraction: 0.5)) {
+                        shakeOffset = 0
+                    }
+                }
+            }
+        }
+    }
+
+    private var backgroundColor: Color {
+        if hasError {
+            return Color.red.opacity(0.15)
+        } else if isHighlighted {
+            return Color.accentColor.opacity(0.15)
+        }
+        return Color.clear
     }
 }
 

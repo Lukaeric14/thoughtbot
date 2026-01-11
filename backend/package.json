@@ -12,6 +12,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "db:migrate": "tsx src/db/migrate.ts",
+    "db:seed": "tsx src/db/seed.ts",
     "db:set-tasks-business": "tsx src/db/set-tasks-business.ts"
   },
   "dependencies": {

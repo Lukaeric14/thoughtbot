@@ -177,6 +177,37 @@ class MacDataStore: ObservableObject {
         saveToDisk()
     }
 
+    /// Restore a thought (used when delete fails)
+    func restoreThought(_ thought: ThoughtItem, category: String) {
+        switch category {
+        case "business":
+            // Insert at beginning (most recent) if not already present
+            if !businessThoughts.contains(where: { $0.id == thought.id }) {
+                businessThoughts.insert(thought, at: 0)
+            }
+        default:
+            if !personalThoughts.contains(where: { $0.id == thought.id }) {
+                personalThoughts.insert(thought, at: 0)
+            }
+        }
+        saveToDisk()
+    }
+
+    /// Restore a task (used when delete fails)
+    func restoreTask(_ task: TaskItem, category: String) {
+        switch category {
+        case "business":
+            if !businessTasks.contains(where: { $0.id == task.id }) {
+                businessTasks.insert(task, at: 0)
+            }
+        default:
+            if !personalTasks.contains(where: { $0.id == task.id }) {
+                personalTasks.insert(task, at: 0)
+            }
+        }
+        saveToDisk()
+    }
+
     // MARK: - Private Methods
 
     private func shouldRefreshTasks(for category: String) -> Bool {

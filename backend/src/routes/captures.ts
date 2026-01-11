@@ -60,6 +60,37 @@ const upload = multer({
   },
 });
 
+// Known empty/invalid transcripts from Whisper when there's silence or noise
+const INVALID_TRANSCRIPTS = new Set([
+  'you',
+  'you.',
+  'bye.',
+  'bye',
+  'thanks.',
+  'thanks',
+  'thank you.',
+  'thank you',
+  '',
+  '.',
+  '..',
+  '. .',
+  '...',
+  'hmm',
+  'hmm.',
+  'uh',
+  'um',
+]);
+
+function isInvalidTranscript(transcript: string): boolean {
+  const normalized = transcript.trim().toLowerCase();
+  // Check exact matches
+  if (INVALID_TRANSCRIPTS.has(normalized)) return true;
+  // Check if too short (less than 2 chars excluding punctuation/spaces)
+  const alphanumeric = normalized.replace(/[^a-z0-9]/g, '');
+  if (alphanumeric.length < 2) return true;
+  return false;
+}
+
 // Process capture asynchronously
 async function processCapture(captureId: string, audioPath: string): Promise<void> {
   try {
@@ -72,6 +103,17 @@ async function processCapture(captureId: string, audioPath: string): Promise<voi
       `UPDATE captures SET transcript = $1 WHERE id = $2`,
       [transcript, captureId]
     );
+
+    // Check for invalid/empty transcripts (silence produces "you" from Whisper)
+    if (isInvalidTranscript(transcript)) {
+      console.log(`[${captureId}] Invalid transcript detected, marking as error`);
+      await queryOne(
+        `UPDATE captures SET classification = $1 WHERE id = $2`,
+        ['error', captureId]
+      );
+      notifyCaptureComplete(captureId, 'error', 'unknown');
+      return;
+    }
 
     // Step 2: Classify transcript
     console.log(`[${captureId}] Classifying...`);
@@ -144,8 +186,8 @@ async function processTextCapture(captureId: string, transcript: string, categor
       [JSON.stringify(classification), captureId]
     );
 
-    // Use category from hint or classification
-    const category: Category = categoryHint || classification.category || 'personal';
+    // Always use LLM classification for category - it analyzes the content
+    const category: Category = classification.category || 'personal';
 
     switch (classification.type) {
       case 'thought':

@@ -37,6 +37,7 @@ struct SSECaptureResult: Codable {
 enum MacCaptureResult {
     case thought
     case task
+    case error      // Invalid/empty transcript (silence, "you", etc.)
     case unknown
 
     init(from classification: String?) {
@@ -45,6 +46,8 @@ enum MacCaptureResult {
             self = .thought
         case "task_create", "task_update":
             self = .task
+        case "error":
+            self = .error
         default:
             self = .unknown
         }
@@ -317,6 +320,41 @@ actor MacAPIClient {
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         request.timeoutInterval = 30
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw MacAPIError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw MacAPIError.serverError(httpResponse.statusCode)
+        }
+    }
+
+    // MARK: - Update Task
+    func updateTask(id: String, status: String? = nil, title: String? = nil, dueDate: String? = nil) async throws {
+        guard let url = URL(string: "\(baseURL)/api/tasks/\(id)") else {
+            throw MacAPIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30
+
+        var body: [String: Any] = [:]
+        if let status = status {
+            body["status"] = status
+        }
+        if let title = title {
+            body["title"] = title
+        }
+        if let dueDate = dueDate {
+            body["due_date"] = dueDate
+        }
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (_, response) = try await URLSession.shared.data(for: request)
 

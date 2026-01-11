@@ -1,6 +1,6 @@
 import { query, queryOne } from '../db/client.js';
 import { normalizeText, findDuplicateTask, findMatchingTask } from './deduplication.js';
-import { findSemanticTaskMatch, findSemanticThoughtMatch, invalidateEmbeddingCache } from './semanticMatcher.js';
+import { findSemanticTaskMatch, invalidateEmbeddingCache } from './semanticMatcher.js';
 import type { Task, Thought, TaskCreatePayload, TaskUpdatePayload, ThoughtPayload, Category } from '../types/index.js';
 
 function getTodayDate(): string {
@@ -14,24 +14,9 @@ export async function createThought(
 ): Promise<{ thought: Thought; isDuplicate: boolean }> {
   const canonicalText = normalizeText(payload.text);
 
-  // Check for semantic match using AI
-  const existingThought = await findSemanticThoughtMatch(payload.text, category);
-
-  if (existingThought) {
-    // Increment mention count on existing thought
-    const updated = await queryOne<Thought>(
-      `UPDATE thoughts
-       SET mention_count = mention_count + 1
-       WHERE id = $1
-       RETURNING *`,
-      [existingThought.id]
-    );
-
-    if (updated) {
-      console.log(`Mention count incremented for thought "${existingThought.text}" -> ${updated.mention_count}`);
-      return { thought: updated, isDuplicate: true };
-    }
-  }
+  // Note: No deduplication for thoughts - they don't have a "completed" state
+  // so we can't distinguish between active vs completed thoughts.
+  // Future: implement thought grouping instead of deduplication.
 
   // Create new thought
   const result = await queryOne<Thought>(
@@ -44,9 +29,6 @@ export async function createThought(
   if (!result) {
     throw new Error('Failed to create thought');
   }
-
-  // Invalidate embedding cache so new item is included in future matches
-  invalidateEmbeddingCache();
 
   return { thought: result, isDuplicate: false };
 }

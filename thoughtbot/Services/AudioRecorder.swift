@@ -6,6 +6,8 @@ enum RecordingState {
     case idle
     case recording
     case processing
+    case noted      // Success state - shown briefly after processing
+    case error      // Error state - shown briefly after failure
 }
 
 @MainActor

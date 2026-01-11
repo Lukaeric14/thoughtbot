@@ -16,6 +16,7 @@ struct thoughtbotApp: App {
     var body: some Scene {
         WindowGroup {
             MainTabView()
+                .preferredColorScheme(.dark)  // Force dark mode
         }
         .onChange(of: scenePhase) { oldPhase, newPhase in
             if newPhase == .background {

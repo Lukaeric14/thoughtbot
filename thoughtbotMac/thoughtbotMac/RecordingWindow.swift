@@ -211,14 +211,12 @@ class RecordingWindow: NSObject {
     private func positionWindow(state: WidgetState, animate: Bool) {
         guard let window = window else { return }
 
-        // Always use the built-in display (the one with the notch/menubar)
-        // NSScreen.screens[0] is the primary display, but we want the built-in one
-        // On MacBooks, the built-in display has localizedName containing "Built-in"
+        // Use the screen where the mouse cursor currently is
+        let mouseLocation = NSEvent.mouseLocation
         let screen: NSScreen
-        if let builtIn = NSScreen.screens.first(where: { $0.localizedName.contains("Built-in") }) {
-            screen = builtIn
+        if let mouseScreen = NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) }) {
+            screen = mouseScreen
         } else if let primary = NSScreen.screens.first {
-            // Fallback to primary display
             screen = primary
         } else {
             return

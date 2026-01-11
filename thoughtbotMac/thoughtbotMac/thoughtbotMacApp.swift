@@ -140,16 +140,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        print("Event tap enabled")
-
-        // Periodically check if event tap is still enabled
-        let tapRef = tap  // Capture the tap directly to avoid MainActor issues
-        Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
-            if !CGEvent.tapIsEnabled(tap: tapRef) {
-                print("Event tap was disabled, re-enabling...")
-                CGEvent.tapEnable(tap: tapRef, enable: true)
-            }
-        }
+        print("Event tap enabled and listening for Option key")
     }
 
     private func handleFlagsChanged(event: CGEvent) -> Unmanaged<CGEvent>? {

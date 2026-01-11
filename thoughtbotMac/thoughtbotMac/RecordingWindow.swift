@@ -52,6 +52,10 @@ class RecordingWindow: NSObject {
     private let hoverEnterDebounceInterval: TimeInterval = 0.3
     private var isAnimatingHover = false
 
+    // Mouse tracking to move widget between screens
+    private var mouseTrackingTimer: Timer?
+    private var lastScreenId: String?
+
     // Notch safe area - content should be positioned below this
     private let notchHeight: CGFloat = 37
 
@@ -132,6 +136,34 @@ class RecordingWindow: NSObject {
 
         // Window starts hidden (idle state), orderFront so it's ready when needed
         window.orderFrontRegardless()
+
+        // Start tracking mouse to move idle widget between screens
+        startMouseTracking()
+    }
+
+    private func startMouseTracking() {
+        // Check mouse position periodically to move idle window between screens
+        mouseTrackingTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateIdleWindowScreen()
+            }
+        }
+    }
+
+    private func updateIdleWindowScreen() {
+        // Only move the window when in idle state (not recording, not expanded, etc.)
+        guard viewModel.widgetState == .idle && !viewModel.isHovering else { return }
+
+        let mouseLocation = NSEvent.mouseLocation
+        guard let mouseScreen = NSScreen.screens.first(where: { $0.frame.contains(mouseLocation) }) else { return }
+
+        // Check if we're on a different screen
+        let screenId = mouseScreen.localizedName
+        if screenId != lastScreenId {
+            lastScreenId = screenId
+            // Instantly reposition to new screen (no animation)
+            positionWindow(state: .idle, animate: false)
+        }
     }
 
     private func handleMouseEntered() {
@@ -222,12 +254,17 @@ class RecordingWindow: NSObject {
             return
         }
 
+        // Check if we're changing screens - if so, don't animate (instant jump)
+        let currentWindowScreen = window.screen
+        let isChangingScreens = currentWindowScreen != nil && currentWindowScreen != screen
+        let shouldAnimate = animate && !isChangingScreens
+
         // In idle state (not hovering, not processing), make window nearly invisible
         // but still able to receive hover events
         let shouldBeInvisible = state == .idle && !viewModel.isHovering && !viewModel.isProcessing
         let targetAlpha: CGFloat = shouldBeInvisible ? 0.01 : 1.0
 
-        if animate {
+        if shouldAnimate {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.15
                 window.animator().alphaValue = targetAlpha
@@ -276,7 +313,7 @@ class RecordingWindow: NSObject {
 
         let newFrame = NSRect(x: x, y: y, width: width, height: height)
 
-        if animate {
+        if shouldAnimate {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.25
                 context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)

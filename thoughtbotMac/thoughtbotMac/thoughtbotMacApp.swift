@@ -109,7 +109,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 // Handle event tap disabled (e.g., system disabled it)
                 if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
                     print("Event tap was disabled, re-enabling...")
-                    CGEvent.tapEnable(tap: appDelegate.eventTap!, enable: true)
+                    if let tap = appDelegate.eventTap {
+                        CGEvent.tapEnable(tap: tap, enable: true)
+                    }
                     return Unmanaged.passRetained(event)
                 }
 
@@ -118,6 +120,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else {
             print("Failed to create event tap. Check Accessibility permissions.")
+            // Show alert to user
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "Accessibility Permission Required"
+                alert.informativeText = "Thoughtbot needs accessibility permissions to detect the Option key. Please grant access in System Settings → Privacy & Security → Accessibility."
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "Open Settings")
+                alert.addButton(withTitle: "Later")
+                if alert.runModal() == .alertFirstButtonReturn {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                }
+            }
             return
         }
 
@@ -127,6 +141,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         print("Event tap enabled")
+
+        // Periodically check if event tap is still enabled
+        let tapRef = tap  // Capture the tap directly to avoid MainActor issues
+        Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
+            if !CGEvent.tapIsEnabled(tap: tapRef) {
+                print("Event tap was disabled, re-enabling...")
+                CGEvent.tapEnable(tap: tapRef, enable: true)
+            }
+        }
     }
 
     private func handleFlagsChanged(event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -136,14 +159,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Track shift state
         isShiftHeld = flags.contains(.maskShift)
 
+        // Key codes for Option keys:
+        // 58 = Left Option
+        // 61 = Right Option
+        // Note: Some keyboards might report different codes, so we also check the flag
+        let isOptionKey = keyCode == 58 || keyCode == 61
+        let optionFlagSet = flags.contains(.maskAlternate)
+
         // Right Option key code is 61 (voice recording)
-        let isRightOptionPressed = keyCode == 61 && flags.contains(.maskAlternate)
-        let isRightOptionReleased = keyCode == 61 && !flags.contains(.maskAlternate)
+        let isRightOptionPressed = keyCode == 61 && optionFlagSet
+        let isRightOptionReleased = keyCode == 61 && !optionFlagSet
 
         // Left Option key code is 58 (typing input)
-        let isLeftOptionPressed = keyCode == 58 && flags.contains(.maskAlternate)
+        let isLeftOptionPressed = keyCode == 58 && optionFlagSet
 
-        print("Key event - keyCode: \(keyCode), flags: \(flags.rawValue), rightOptPressed: \(isRightOptionPressed), rightOptReleased: \(isRightOptionReleased), leftOptPressed: \(isLeftOptionPressed), isRecording: \(isRecording)")
+        // Debug logging (only for option key events to reduce noise)
+        if isOptionKey {
+            print("Option key event - keyCode: \(keyCode), flags: \(flags.rawValue), optionFlag: \(optionFlagSet), rightOptPressed: \(isRightOptionPressed), rightOptReleased: \(isRightOptionReleased), leftOptPressed: \(isLeftOptionPressed), isRecording: \(isRecording)")
+        }
 
         // Left Option = activate typing mode (single press)
         if isLeftOptionPressed && !isRecording && !isTyping {

@@ -209,7 +209,20 @@ class RecordingWindow: NSObject {
     }
 
     private func positionWindow(state: WidgetState, animate: Bool) {
-        guard let window = window, let screen = NSScreen.main else { return }
+        guard let window = window else { return }
+
+        // Always use the built-in display (the one with the notch/menubar)
+        // NSScreen.screens[0] is the primary display, but we want the built-in one
+        // On MacBooks, the built-in display has localizedName containing "Built-in"
+        let screen: NSScreen
+        if let builtIn = NSScreen.screens.first(where: { $0.localizedName.contains("Built-in") }) {
+            screen = builtIn
+        } else if let primary = NSScreen.screens.first {
+            // Fallback to primary display
+            screen = primary
+        } else {
+            return
+        }
 
         // In idle state (not hovering, not processing), make window nearly invisible
         // but still able to receive hover events

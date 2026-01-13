@@ -704,8 +704,26 @@ class WidgetViewModel: ObservableObject {
     // Error state for subtle feedback
     @Published var errorItemId: String?
 
-    // Persisted category
-    @AppStorage("macSelectedCategory") var selectedCategory: String = "personal"
+    // Persisted category - use private storage with validated computed property
+    @AppStorage("macSelectedCategory") private var _selectedCategory: String = "personal"
+
+    var selectedCategory: String {
+        get {
+            // Always return a valid category
+            let value = _selectedCategory
+            if value == "personal" || value == "business" {
+                return value
+            }
+            return "personal"
+        }
+        set {
+            // Only allow valid values
+            if newValue == "personal" || newValue == "business" {
+                _selectedCategory = newValue
+                objectWillChange.send()
+            }
+        }
+    }
 
     // Use DataStore for data
     private let dataStore = MacDataStore.shared
@@ -720,9 +738,9 @@ class WidgetViewModel: ObservableObject {
     var isProcessing: Bool { processingCount > 0 || widgetState == .processing }
 
     init() {
-        // Ensure selectedCategory is valid (default to "personal" if invalid)
-        if selectedCategory != "personal" && selectedCategory != "business" {
-            selectedCategory = "personal"
+        // Fix any invalid stored value immediately
+        if _selectedCategory != "personal" && _selectedCategory != "business" {
+            _selectedCategory = "personal"
         }
 
         // Prefetch all data on init
